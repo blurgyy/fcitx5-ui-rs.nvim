@@ -5,14 +5,18 @@ use nvim_oxi::{
     api::{
         self,
         opts::{CreateAugroupOpts, CreateAutocmdOpts},
+        types::AutocmdCallbackArgs,
         Buffer,
     },
     Error as OxiError,
 };
 
-use crate::fcitx5::commands::{set_im_en, set_im_zh};
 use crate::plugin::Fcitx5Plugin;
 use crate::utils::as_api_error;
+use crate::{
+    fcitx5::commands::{set_im_en, set_im_zh},
+    plugin::get_candidate_state,
+};
 use std::sync::{Arc, Mutex};
 
 /// Setup autocommands for input method switching
@@ -105,9 +109,124 @@ pub fn setup_autocommands(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     Ok(())
 }
 
-/// Placeholder for future InsertCharPre event setup
-/// This will be implemented later for candidate selection UI
-pub fn setup_insert_char_pre(_state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
-    // This will be implemented in the future
+/// Setup InsertCharPre event to handle candidate selection
+pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
+    let state_guard = state.lock().unwrap();
+
+    // Only proceed if initialized
+    if !state_guard.initialized {
+        return Ok(());
+    }
+
+    let augroup_id = state_guard
+        .augroup_id
+        .expect("Augroup should be initialized");
+    let ctx_clone = state_guard.ctx.as_ref().unwrap().clone();
+
+    // Drop lock before creating autocmd
+    drop(state_guard);
+
+    // Get a reference to the candidate state
+    let candidate_state = get_candidate_state();
+
+    let opts = CreateAutocmdOpts::builder()
+        .group(augroup_id)
+        .desc("Process key events for Fcitx5 input method")
+        .callback(move |_| {
+            // Get the character being inserted using the Neovim API
+            let char_arg = if let Ok(char_obj) = api::get_vvar::<String>("char") {
+                char_obj
+            } else {
+                return Ok::<_, oxi::Error>(false);
+            };
+            let char_arg = char_arg.as_str();
+
+            if char_arg.is_empty() {
+                return Ok(false);
+            }
+
+            // Clone state for use inside callback
+            let candidate_state_clone = candidate_state.clone();
+            let mut guard = candidate_state_clone.lock().unwrap();
+
+            if guard.is_visible && !guard.candidates.is_empty() {
+                // Get the first character (should be only one)
+                let c = char_arg.chars().next().unwrap();
+
+                match c {
+                    '1'..='9' => {
+                        // Direct candidate selection by number
+                        let idx = (c as u8 - b'1') as usize;
+                        if idx < guard.candidates.len() {
+                            guard.selected_index = idx;
+
+                            // Select this candidate
+                            if let Some(candidate) = guard.get_selected_candidate() {
+                                // Use the candidate's text
+                                let text = candidate.text.clone();
+
+                                // Hide the candidate window
+                                guard.hide()?;
+
+                                // We need to clear the character that triggered this (the number)
+                                // and insert the candidate instead
+                                api::input("<BS>")?; // Delete the number key
+
+                                // Insert the candidate text
+                                api::input(text)?;
+
+                                // Return true to cancel the original key press
+                                return Ok(true);
+                            }
+                        }
+                    }
+                    // Tab for next candidate
+                    '\t' => {
+                        guard.select_next();
+                        guard.update_display()?;
+                        return Ok(true); // Cancel the tab key
+                    }
+                    // Shift-Tab for previous candidate
+                    '\u{19}' => {
+                        // Shift-Tab character
+                        guard.select_previous();
+                        guard.update_display()?;
+                        return Ok(true); // Cancel the shift-tab key
+                    }
+                    // Escape to cancel
+                    '\u{1b}' => {
+                        // Escape character
+                        guard.hide()?;
+                        return Ok(false); // Let escape propagate to exit insert mode
+                    }
+                    // Other keys should be passed through to Fcitx5
+                    _ => {
+                        // Send key to Fcitx5
+                        let code = fcitx5_dbus::utils::key_event::KeyVal::from_char(c);
+                        let state = fcitx5_dbus::utils::key_event::KeyState::NoState;
+
+                        // Process the key in Fcitx5
+                        match ctx_clone.process_key_event(code, 0, state, false, 0) {
+                            Ok(_) => {
+                                // Key was processed by Fcitx5
+                                return Ok(true); // Cancel the original key press
+                            }
+                            Err(_) => {
+                                // Error processing key, let it pass through
+                                return Ok(false);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // By default, don't interfere with the key press
+            Ok(false)
+        })
+        .build();
+
+    // Register the autocmd for InsertCharPre
+    api::create_autocmd(["InsertCharPre"], &opts)?;
+
     Ok(())
 }

@@ -5,12 +5,15 @@ use fcitx5_dbus::input_context::InputContextProxyBlocking;
 use nvim_oxi::api::Buffer;
 use std::sync::{Arc, Mutex};
 
+use crate::fcitx5::candidates::CandidateState;
+
 // Structure to hold the plugin state
 pub struct Fcitx5Plugin {
     pub controller: Option<ControllerProxyBlocking<'static>>,
     pub ctx: Option<InputContextProxyBlocking<'static>>,
     pub augroup_id: Option<u32>,
     pub initialized: bool,
+    pub candidate_state: CandidateState,
 }
 
 impl Fcitx5Plugin {
@@ -20,6 +23,7 @@ impl Fcitx5Plugin {
             ctx: None,
             augroup_id: None,
             initialized: false,
+            candidate_state: CandidateState::new(),
         }
     }
 
@@ -44,4 +48,11 @@ lazy_static::lazy_static! {
 // Get a reference to the global state
 pub fn get_state() -> Arc<Mutex<Fcitx5Plugin>> {
     PLUGIN_STATE.clone()
+}
+
+// Get a reference to just the candidate state
+pub fn get_candidate_state() -> Arc<Mutex<CandidateState>> {
+    let state = get_state();
+    let state_guard = state.lock().unwrap();
+    Arc::new(Mutex::new(state_guard.candidate_state.clone()))
 }

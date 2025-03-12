@@ -11,11 +11,14 @@ use nvim_oxi::{
 use std::io::Error as IoError;
 use std::io::ErrorKind;
 
-use crate::fcitx5::commands::{set_im_en, set_im_zh, toggle_im};
-use crate::fcitx5::connection::prepare;
+use crate::fcitx5::{
+    candidates::setup_candidate_receivers,
+    commands::{set_im_en, set_im_zh, toggle_im},
+};
 use crate::neovim::autocmds::setup_autocommands;
 use crate::plugin::get_state;
 use crate::utils::as_api_error;
+use crate::{fcitx5::connection::prepare, plugin::get_candidate_state};
 
 /// Register all plugin commands
 pub fn register_commands() -> oxi::Result<()> {
@@ -135,6 +138,12 @@ pub fn initialize_fcitx5() -> oxi::Result<()> {
 
     // Initialize the connection
     let (controller, ctx) = prepare().map_err(as_api_error)?;
+
+    // Get a reference to the candidate state for setup
+    let candidate_state = get_candidate_state();
+
+    // Setup candidate receivers
+    setup_candidate_receivers(&ctx, candidate_state).map_err(as_api_error)?;
 
     // Store in state
     state_guard.controller = Some(controller);

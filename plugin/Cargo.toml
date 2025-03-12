@@ -1,0 +1,16 @@
+[package]
+name = "fcitx5-ui-rs-nvim"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fcitx5-dbus = "0.1.4"
+nvim-oxi = { version = "0.5.1", features = [
+  # registering autocmd is buggy on neovim-0-9
+  "neovim-0-10",
+] }
+tokio = { version = "1.44.0", features = ["full"] }
+
+[lib]
+name = "fcitx5_ui_rs"
+crate-type = ["cdylib"]

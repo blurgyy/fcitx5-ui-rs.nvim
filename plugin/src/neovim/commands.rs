@@ -6,16 +6,15 @@ use nvim_oxi::{
         self,
         opts::{CreateCommandOpts, EchoOpts},
     },
-    mlua,
 };
 
 use std::{io::Error as IoError, sync::Arc};
 use std::{io::ErrorKind, sync::Mutex};
 
-use crate::neovim::autocmds::setup_autocommands;
+use crate::fcitx5::connection::prepare;
 use crate::plugin::get_state;
 use crate::utils::as_api_error;
-use crate::{fcitx5::connection::prepare, plugin::get_candidate_state};
+use crate::{fcitx5::candidates::CandidateState, neovim::autocmds::setup_autocommands};
 use crate::{
     fcitx5::{
         candidates::setup_candidate_receivers,
@@ -136,10 +135,7 @@ fn setup_candidate_timer(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
             std::thread::sleep(std::time::Duration::from_millis(100));
 
             // Try to acquire locks non-blocking
-            let state_guard = match state.try_lock() {
-                Ok(guard) => guard,
-                Err(_) => continue, // Skip this tick if lock is contended
-            };
+            let state_guard = state.lock().unwrap();
 
             if !state_guard.initialized {
                 continue;
@@ -149,10 +145,7 @@ fn setup_candidate_timer(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
             let candidate_state = state_guard.candidate_state.clone();
             drop(state_guard);
 
-            let candidate_guard = match candidate_state.try_lock() {
-                Ok(guard) => guard,
-                Err(_) => continue,
-            };
+            let candidate_guard = candidate_state.lock().unwrap();
 
             // eprintln!(
             //     " --> candidate.is_visible: {}, candidate.candidates: {:?}",
@@ -171,54 +164,29 @@ fn setup_candidate_timer(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
             if should_show {
                 // We can't directly call nvim_oxi functions from another thread
                 // So we use a Lua command to be executed in the main thread
-                let _ = nvim_oxi::api::command("lua fcitx5_ui_rs.show_candidate_window()");
+                let _ = show_candidate_window(candidate_state.clone());
             } else if should_hide {
-                let _ = nvim_oxi::api::command("lua fcitx5_ui_rs.hide_candidate_window()");
+                let _ = hide_candidate_window(candidate_state.clone());
             }
         }
     });
 
-    register_lua_functions()?;
-
     Ok(())
 }
 
-pub fn register_lua_functions() -> oxi::Result<()> {
-    let lua = mlua::lua();
+pub fn show_candidate_window(candidate_state: Arc<Mutex<CandidateState>>) -> oxi::Result<()> {
+    let mut guard = candidate_state.lock().unwrap();
+    if guard.is_visible && !guard.candidates.is_empty() {
+        guard.setup_window()?;
+        guard.update_display()?;
+        guard.show()?;
+    }
+    Ok(())
+}
 
-    // Create a module table
-    let module = lua.create_table()?;
-
-    // Register update function
-    module.set(
-        "show_candidate_window",
-        lua.create_function(|_, _: ()| {
-            let candidate_state = get_candidate_state();
-            let mut guard = candidate_state.lock().unwrap();
-            if guard.is_visible && !guard.candidates.is_empty() {
-                guard
-                    .setup_window()
-                    .and_then(|_| guard.update_display())
-                    .and_then(|_| guard.show());
-            }
-            Ok(())
-        })?,
-    )?;
-
-    // Register hide function
-    module.set(
-        "hide_candidate_window",
-        lua.create_function(|_, _: ()| {
-            let candidate_state = get_candidate_state();
-            let mut guard = candidate_state.lock().unwrap();
-            guard.hide();
-            Ok(())
-        })?,
-    )?;
-
-    // Register the module
-    lua.globals().set("fcitx5_ui_rs", module)?;
-
+pub fn hide_candidate_window(candidate_state: Arc<Mutex<CandidateState>>) -> oxi::Result<()> {
+    let mut guard = candidate_state.lock().unwrap();
+    guard.hide()?;
     Ok(())
 }
 

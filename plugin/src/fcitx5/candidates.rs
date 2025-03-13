@@ -15,6 +15,8 @@ use nvim_oxi::{
 };
 use std::sync::{Arc, Mutex};
 
+use crate::neovim::commands::show_candidate_window;
+
 /// Structure for an input method candidate
 #[derive(Debug, Clone)]
 pub struct Candidate {
@@ -179,7 +181,13 @@ impl CandidateState {
             }
 
             // Update buffer content
-            buffer.set_lines(0..buffer.line_count()?, true, lines)?;
+            loop {
+                match buffer.set_lines(0..buffer.line_count()?, true, lines.clone()) {
+                    Err(e)
+                        if e.to_string() == r#"Exception("Failed to save undo information")"# => {}
+                    _ => break,
+                }
+            }
         }
 
         Ok(())
@@ -197,8 +205,11 @@ impl CandidateState {
 
     /// Hide the candidate window
     pub fn hide(&mut self) -> oxi::Result<()> {
+        println!("trying to hiding window {:?}", &self.window_id);
         if let Some(window) = self.window_id.as_ref() {
+            println!("we do have a window");
             if window.is_valid() {
+                println!("window is valid!");
                 window.clone().close(true)?
             }
             self.window_id = None;
@@ -258,6 +269,11 @@ pub fn setup_candidate_receivers(
                                 eprintln!("Error processing update signal");
                             }
                         }
+
+                        // Trigger immediate UI update after dropping lock
+                        if let Err(e) = show_candidate_window(candidate_state.clone()) {
+                            eprintln!("Failed updating candidate window on update: {}", e);
+                        }
                     }
                 }
                 Err(e) => {
@@ -278,8 +294,11 @@ pub fn setup_candidate_receivers(
                     for signal in commit_signal {
                         if let Ok(_) = signal.args() {
                             // When a string is committed, mark for hiding
-                            if let Ok(mut state) = candidate_state.try_lock() {
-                                state.reset();
+                            let mut guard = candidate_state.lock().unwrap();
+                            guard.reset();
+                            drop(guard);
+                            if let Err(e) = show_candidate_window(candidate_state.clone()) {
+                                eprintln!("Failed updating candidate window on commit: {}", e);
                             }
                         }
                     }

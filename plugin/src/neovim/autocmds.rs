@@ -183,20 +183,17 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
                                 // // Insert the candidate text
                                 // api::input(text)?;
                                 api::set_vvar("char", text)?;
-                                guard.update_display()?;
                             }
                         }
                     }
                     // Tab for next candidate
                     '\t' => {
                         guard.select_next();
-                        guard.update_display()?;
                     }
                     // Shift-Tab for previous candidate
                     '\u{19}' => {
                         // Shift-Tab character
                         guard.select_previous();
-                        guard.update_display()?;
                     }
                     // Escape to cancel
                     '\u{1b}' => {

@@ -3,6 +3,7 @@
   rustPlatform,
 
   pkg-config,
+  luajit,
   dbus,
 }:
 
@@ -15,7 +16,10 @@ rustPlatform.buildRustPackage {
     rustPlatform.bindgenHook
     pkg-config
   ];
-  buildInputs = [ dbus.dev ];
+  buildInputs = [
+    luajit
+    dbus.dev
+  ];
 
   shellHook = ''
     [[ "$-" == *i* ]] && exec $(grep -E "^$USER:" /etc/passwd | awk -F: '{ print $NF }')

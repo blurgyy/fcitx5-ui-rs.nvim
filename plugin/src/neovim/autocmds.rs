@@ -4,8 +4,7 @@ use nvim_oxi::{
     self as oxi,
     api::{
         self,
-        opts::{CreateAugroupOpts, CreateAutocmdOpts},
-        types::AutocmdCallbackArgs,
+        opts::{CreateAugroupOpts, CreateAutocmdOpts, EchoOpts},
         Buffer,
     },
     Error as OxiError,
@@ -106,6 +105,12 @@ pub fn setup_autocommands(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
         .build();
     api::create_autocmd(["WinLeave", "BufLeave"], &opts)?;
 
+    // Release the lock before setting up InsertCharPre autocmd
+    drop(state_guard);
+
+    // Set up the InsertCharPre event handler
+    setup_insert_char_pre(state.clone())?;
+
     Ok(())
 }
 
@@ -137,9 +142,16 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
             let char_arg = if let Ok(char_obj) = api::get_vvar::<String>("char") {
                 char_obj
             } else {
+                api::echo(
+                    vec![("failed to get char arg", None)],
+                    false,
+                    &EchoOpts::builder().build(),
+                )?;
                 return Ok::<_, oxi::Error>(false);
             };
             let char_arg = char_arg.as_str();
+
+            api::echo(vec![(char_arg, None)], false, &EchoOpts::builder().build())?;
 
             if char_arg.is_empty() {
                 return Ok(false);
@@ -227,6 +239,12 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
 
     // Register the autocmd for InsertCharPre
     api::create_autocmd(["InsertCharPre"], &opts)?;
+
+    api::echo(
+        vec![("Registered InsertCharPre autocmd", None)],
+        false,
+        &EchoOpts::builder().build(),
+    )?;
 
     Ok(())
 }

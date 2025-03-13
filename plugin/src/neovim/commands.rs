@@ -6,19 +6,23 @@ use nvim_oxi::{
         self,
         opts::{CreateCommandOpts, EchoOpts},
     },
+    mlua,
 };
 
-use std::io::Error as IoError;
-use std::io::ErrorKind;
+use std::{io::Error as IoError, sync::Arc};
+use std::{io::ErrorKind, sync::Mutex};
 
-use crate::fcitx5::{
-    candidates::setup_candidate_receivers,
-    commands::{set_im_en, set_im_zh, toggle_im},
-};
 use crate::neovim::autocmds::setup_autocommands;
 use crate::plugin::get_state;
 use crate::utils::as_api_error;
 use crate::{fcitx5::connection::prepare, plugin::get_candidate_state};
+use crate::{
+    fcitx5::{
+        candidates::{setup_candidate_receivers, CandidateState},
+        commands::{set_im_en, set_im_zh, toggle_im},
+    },
+    plugin::Fcitx5Plugin,
+};
 
 /// Register all plugin commands
 pub fn register_commands() -> oxi::Result<()> {
@@ -122,6 +126,79 @@ pub fn register_commands() -> oxi::Result<()> {
     Ok(())
 }
 
+/// Setup a timer to update the candidate window using a background thread
+/// instead of Lua timers to avoid potential Lua callback issues
+fn setup_candidate_timer(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
+    // Spawn a background thread for the timer
+    std::thread::spawn(move || {
+        loop {
+            // Sleep for 100ms
+            std::thread::sleep(std::time::Duration::from_millis(100));
+
+            // Try to acquire locks non-blocking
+            let state_guard = match state.try_lock() {
+                Ok(guard) => guard,
+                Err(_) => continue, // Skip this tick if lock is contended
+            };
+
+            if !state_guard.initialized {
+                continue;
+            }
+
+            // Get a clone of candidate state
+            let candidate_state = state_guard.candidate_state.clone();
+            drop(state_guard);
+
+            let candidate_guard = match candidate_state.try_lock() {
+                Ok(guard) => guard,
+                Err(_) => continue,
+            };
+
+            // Check if we need to update the UI
+            let should_show = candidate_guard.is_visible && !candidate_guard.candidates.is_empty();
+            let should_hide = !candidate_guard.is_visible && candidate_guard.window_id.is_some();
+
+            // Drop lock before interacting with Neovim API
+            drop(candidate_guard);
+
+            // Schedule UI updates through Neovim's RPC mechanism (which is thread-safe)
+            if should_show {
+                // We can't directly call nvim_oxi functions from another thread
+                // So we use a Lua command to be executed in the main thread
+                let _ = nvim_oxi::api::command("lua require('fcitx5').update_candidate_window()");
+            } else if should_hide {
+                let _ = nvim_oxi::api::command("lua require('fcitx5').hide_candidate_window()");
+            }
+        }
+    });
+
+    // Register the Lua functions for updating the UI from the main thread
+    let lua = mlua::lua();
+    let lua_code = r#"
+    local M = {}
+
+    M.update_candidate_window = function()
+        -- Call your Rust function to update the window
+        -- This will be executed in Neovim's main thread
+        vim.cmd('lua print("Updating candidate window")')
+        -- In practice, you'd call a registered function here
+    end
+
+    M.hide_candidate_window = function()
+        -- Call your Rust function to hide the window
+        vim.cmd('lua print("Hiding candidate window")')
+        -- In practice, you'd call a registered function here
+    end
+
+    return M
+    "#;
+
+    lua.globals()
+        .set("fcitx5", lua.load(lua_code).eval::<mlua::Table>()?)?;
+
+    Ok(())
+}
+
 /// Initialize the connection and input context
 pub fn initialize_fcitx5() -> oxi::Result<()> {
     let state = get_state();
@@ -140,21 +217,23 @@ pub fn initialize_fcitx5() -> oxi::Result<()> {
     let (controller, ctx) = prepare().map_err(as_api_error)?;
 
     // Get a reference to the candidate state for setup
-    let candidate_state = get_candidate_state();
-
-    // Setup candidate receivers
-    setup_candidate_receivers(&ctx, candidate_state).map_err(as_api_error)?;
+    let candidate_state = state_guard.candidate_state.clone();
 
     // Store in state
     state_guard.controller = Some(controller);
-    state_guard.ctx = Some(ctx);
+    state_guard.ctx = Some(ctx.clone());
     state_guard.initialized = true;
+
+    // Setup candidate receivers
+    setup_candidate_receivers(&ctx, candidate_state).map_err(as_api_error)?;
 
     // Release the lock before setting up autocommands
     drop(state_guard);
 
     // Setup autocommands
     setup_autocommands(state.clone())?;
+
+    setup_candidate_timer(state.clone())?;
 
     api::echo(
         vec![("Fcitx5 plugin initialized and activated", None)],

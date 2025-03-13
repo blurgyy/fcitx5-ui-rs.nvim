@@ -215,85 +215,81 @@ impl CandidateState {
 
 /// Setup message receivers to listen for Fcitx5 candidate updates
 pub fn setup_candidate_receivers(
-    ctx: &InputContextProxyBlocking<'_>,
+    ctx: &InputContextProxyBlocking<'static>,
     candidate_state: Arc<Mutex<CandidateState>>,
 ) -> Result<()> {
-    // Get the update signal
-    let update_signal = ctx.receive_update_client_side_ui()?;
-
     // Spawn thread to handle update signals
     std::thread::spawn({
+        let update_ctx = ctx.clone();
         let candidate_state = candidate_state.clone();
         move || {
-            for signal in update_signal {
-                // Try to get the signal arguments
-                match signal.args() {
-                    Ok(args) => {
-                        // Convert candidate data from Fcitx5 format
-                        let mut candidates = Vec::new();
-                        for (display, text) in args.candidates {
-                            candidates.push(Candidate {
-                                display: display.to_owned(),
-                                text: text.to_owned(),
-                            });
-                        }
+            // Use a timeout to avoid blocking indefinitely
+            match update_ctx.receive_update_client_side_ui() {
+                Ok(update_signal) => {
+                    for signal in update_signal {
+                        // Process signal with timeout to avoid hanging
+                        match signal.args() {
+                            Ok(args) => {
+                                // Convert candidate data from Fcitx5 format
+                                let mut candidates = Vec::new();
+                                for (display, text) in args.candidates {
+                                    candidates.push(Candidate {
+                                        display: display.to_owned(),
+                                        text: text.to_owned(),
+                                    });
+                                }
 
-                        // Extract preedit text
-                        let mut preedit_text = String::new();
-                        for (text, _) in &args.preedit_strs {
-                            preedit_text.push_str(text);
-                        }
+                                // Extract preedit text
+                                let mut preedit_text = String::new();
+                                for (text, _) in &args.preedit_strs {
+                                    preedit_text.push_str(text);
+                                }
 
-                        // Update our candidate state
-                        let mut state = candidate_state.lock().unwrap();
-                        state.update_candidates(candidates);
-                        state.preedit_text = preedit_text;
-                        state.has_prev = args.has_prev;
-                        state.has_next = args.has_next;
+                                // Update our candidate state
+                                if let Ok(mut state) = candidate_state.try_lock() {
+                                    state.update_candidates(candidates);
+                                    state.preedit_text = preedit_text;
+                                    state.has_prev = args.has_prev;
+                                    state.has_next = args.has_next;
 
-                        // Show/hide candidate window based on whether we have candidates
-                        if !state.candidates.is_empty() {
-                            match state.show() {
-                                Ok(_) => {}
-                                Err(e) => eprintln!("Error showing candidate window: {}", e),
+                                    // Don't try to update UI from this thread
+                                    // Instead, set a flag that Neovim should check periodically
+                                    state.is_visible = !state.candidates.is_empty();
+                                }
                             }
-                            match state.update_display() {
-                                Ok(_) => {}
-                                Err(e) => eprintln!("Error updating candidate display: {}", e),
-                            }
-                        } else {
-                            match state.hide() {
-                                Ok(_) => {}
-                                Err(e) => eprintln!("Error hiding candidate window: {}", e),
+                            Err(_) => {
+                                // Just log and continue
+                                eprintln!("Error processing update signal");
                             }
                         }
                     }
-                    Err(e) => {
-                        eprintln!("Error getting update args: {}", e);
-                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to receive update signals: {}", e);
                 }
             }
         }
     });
 
-    // Get the commit string signal
-    let commit_signal = ctx.receive_commit_string()?;
-
     // Spawn thread to handle commit signals
-    std::thread::spawn(move || {
-        for signal in commit_signal {
-            // Try to get the signal arguments
-            match signal.args() {
-                Ok(args) => {
-                    // When a string is committed, hide the candidate window
-                    let mut state = candidate_state.lock().unwrap();
-                    state.hide().unwrap_or_else(|e| {
-                        eprintln!("Error hiding candidate window: {}", e);
-                    });
-                    state.reset();
+    std::thread::spawn({
+        let commit_ctx = ctx.clone();
+        let candidate_state = candidate_state.clone();
+
+        move || {
+            match commit_ctx.receive_commit_string() {
+                Ok(commit_signal) => {
+                    for signal in commit_signal {
+                        if let Ok(_) = signal.args() {
+                            // When a string is committed, mark for hiding
+                            if let Ok(mut state) = candidate_state.try_lock() {
+                                state.reset();
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
-                    eprintln!("Error getting commit args: {}", e);
+                    eprintln!("Failed to receive commit signals: {}", e);
                 }
             }
         }

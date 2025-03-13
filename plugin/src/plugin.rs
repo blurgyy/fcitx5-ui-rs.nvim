@@ -13,7 +13,7 @@ pub struct Fcitx5Plugin {
     pub ctx: Option<InputContextProxyBlocking<'static>>,
     pub augroup_id: Option<u32>,
     pub initialized: bool,
-    pub candidate_state: CandidateState,
+    pub candidate_state: Arc<Mutex<CandidateState>>,
 }
 
 impl Fcitx5Plugin {
@@ -23,7 +23,7 @@ impl Fcitx5Plugin {
             ctx: None,
             augroup_id: None,
             initialized: false,
-            candidate_state: CandidateState::new(),
+            candidate_state: Arc::new(Mutex::new(CandidateState::new())),
         }
     }
 
@@ -54,5 +54,6 @@ pub fn get_state() -> Arc<Mutex<Fcitx5Plugin>> {
 pub fn get_candidate_state() -> Arc<Mutex<CandidateState>> {
     let state = get_state();
     let state_guard = state.lock().unwrap();
-    Arc::new(Mutex::new(state_guard.candidate_state.clone()))
+    state_guard.candidate_state.clone()
+    // Arc::new(Mutex::new(state_guard.candidate_state.clone()))
 }

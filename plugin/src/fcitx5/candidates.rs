@@ -222,6 +222,7 @@ pub fn setup_candidate_receivers(
             match update_ctx.receive_update_client_side_ui() {
                 Ok(update_signal) => {
                     for signal in update_signal {
+                        // eprintln!("Got signal with args: {:?}", signal.args());
                         // Process signal with timeout to avoid hanging
                         match signal.args() {
                             Ok(args) => {
@@ -241,7 +242,7 @@ pub fn setup_candidate_receivers(
                                 }
 
                                 // Update our candidate state
-                                if let Ok(mut state) = candidate_state.try_lock() {
+                                if let Ok(mut state) = candidate_state.lock() {
                                     state.update_candidates(&candidates);
                                     state.preedit_text = preedit_text;
                                     state.has_prev = args.has_prev;

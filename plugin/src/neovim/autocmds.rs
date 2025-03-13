@@ -144,6 +144,7 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
             } else {
                 return Ok::<_, oxi::Error>(false);
             };
+            api::set_vvar("char", "")?;
             let char_arg = char_arg.as_str();
 
             api::echo(vec![(char_arg, None)], false, &EchoOpts::builder().build())?;
@@ -172,15 +173,17 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
                                 // Use the candidate's text
                                 let text = candidate.text.clone();
 
-                                // Hide the candidate window
-                                guard.hide()?;
+                                // // Hide the candidate window
+                                // guard.hide()?;
 
-                                // We need to clear the character that triggered this (the number)
-                                // and insert the candidate instead
-                                api::input("<BS>")?; // Delete the number key
+                                // // We need to clear the character that triggered this (the number)
+                                // // and insert the candidate instead
+                                // api::input("<BS>")?; // Delete the number key
 
-                                // Insert the candidate text
-                                api::input(text)?;
+                                // // Insert the candidate text
+                                // api::input(text)?;
+                                api::set_vvar("char", text)?;
+                                guard.update_display()?;
                             }
                         }
                     }

@@ -178,6 +178,8 @@ fn setup_candidate_timer(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
         }
     });
 
+    register_lua_functions()?;
+
     Ok(())
 }
 
@@ -247,8 +249,6 @@ pub fn initialize_fcitx5() -> oxi::Result<()> {
 
     // Setup candidate receivers
     setup_candidate_receivers(&ctx, candidate_state).map_err(as_api_error)?;
-
-    register_lua_functions()?;
 
     // Release the lock before setting up autocommands
     drop(state_guard);

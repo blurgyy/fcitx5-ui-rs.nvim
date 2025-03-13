@@ -18,7 +18,7 @@ use crate::utils::as_api_error;
 use crate::{fcitx5::connection::prepare, plugin::get_candidate_state};
 use crate::{
     fcitx5::{
-        candidates::{setup_candidate_receivers, CandidateState},
+        candidates::setup_candidate_receivers,
         commands::{set_im_en, set_im_zh, toggle_im},
     },
     plugin::Fcitx5Plugin,
@@ -154,6 +154,12 @@ fn setup_candidate_timer(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
                 Err(_) => continue,
             };
 
+            // eprintln!(
+            //     " --> candidate.is_visible: {}, candidate.candidates: {:?}",
+            //     candidate_guard.is_visible,
+            //     candidate_guard.candidates.clone(),
+            // );
+
             // Check if we need to update the UI
             let should_show = candidate_guard.is_visible && !candidate_guard.candidates.is_empty();
             let should_hide = !candidate_guard.is_visible && candidate_guard.window_id.is_some();
@@ -165,36 +171,51 @@ fn setup_candidate_timer(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
             if should_show {
                 // We can't directly call nvim_oxi functions from another thread
                 // So we use a Lua command to be executed in the main thread
-                let _ = nvim_oxi::api::command("lua require('fcitx5').update_candidate_window()");
+                let _ = nvim_oxi::api::command("lua fcitx5_ui_rs.show_candidate_window()");
             } else if should_hide {
-                let _ = nvim_oxi::api::command("lua require('fcitx5').hide_candidate_window()");
+                let _ = nvim_oxi::api::command("lua fcitx5_ui_rs.hide_candidate_window()");
             }
         }
     });
 
-    // Register the Lua functions for updating the UI from the main thread
+    Ok(())
+}
+
+pub fn register_lua_functions() -> oxi::Result<()> {
     let lua = mlua::lua();
-    let lua_code = r#"
-    local M = {}
 
-    M.update_candidate_window = function()
-        -- Call your Rust function to update the window
-        -- This will be executed in Neovim's main thread
-        vim.cmd('lua print("Updating candidate window")')
-        -- In practice, you'd call a registered function here
-    end
+    // Create a module table
+    let module = lua.create_table()?;
 
-    M.hide_candidate_window = function()
-        -- Call your Rust function to hide the window
-        vim.cmd('lua print("Hiding candidate window")')
-        -- In practice, you'd call a registered function here
-    end
+    // Register update function
+    module.set(
+        "show_candidate_window",
+        lua.create_function(|_, _: ()| {
+            let candidate_state = get_candidate_state();
+            let mut guard = candidate_state.lock().unwrap();
+            if guard.is_visible && !guard.candidates.is_empty() {
+                guard
+                    .setup_window()
+                    .and_then(|_| guard.update_display())
+                    .and_then(|_| guard.show());
+            }
+            Ok(())
+        })?,
+    )?;
 
-    return M
-    "#;
+    // Register hide function
+    module.set(
+        "hide_candidate_window",
+        lua.create_function(|_, _: ()| {
+            let candidate_state = get_candidate_state();
+            let mut guard = candidate_state.lock().unwrap();
+            guard.hide();
+            Ok(())
+        })?,
+    )?;
 
-    lua.globals()
-        .set("fcitx5", lua.load(lua_code).eval::<mlua::Table>()?)?;
+    // Register the module
+    lua.globals().set("fcitx5_ui_rs", module)?;
 
     Ok(())
 }
@@ -226,6 +247,8 @@ pub fn initialize_fcitx5() -> oxi::Result<()> {
 
     // Setup candidate receivers
     setup_candidate_receivers(&ctx, candidate_state).map_err(as_api_error)?;
+
+    register_lua_functions()?;
 
     // Release the lock before setting up autocommands
     drop(state_guard);

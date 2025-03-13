@@ -6,19 +6,14 @@ use nvim_oxi::{
     self as oxi,
     api::{
         self,
-        opts::*,
         types::{
             WindowBorder, WindowConfig, WindowRelativeTo, WindowStyle, WindowTitle,
             WindowTitlePosition,
         },
         Buffer, Window,
     },
-    Error as OxiError,
 };
-use std::{
-    ops::RangeBounds,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 /// Structure for an input method candidate
 #[derive(Debug, Clone)]
@@ -63,8 +58,8 @@ impl CandidateState {
     }
 
     /// Update candidates list
-    pub fn update_candidates(&mut self, candidates: Vec<Candidate>) {
-        self.candidates = candidates;
+    pub fn update_candidates(&mut self, candidates: &[Candidate]) {
+        self.candidates = candidates.to_owned();
         if !self.candidates.is_empty() && self.selected_index >= self.candidates.len() {
             self.selected_index = 0;
         }
@@ -247,7 +242,7 @@ pub fn setup_candidate_receivers(
 
                                 // Update our candidate state
                                 if let Ok(mut state) = candidate_state.try_lock() {
-                                    state.update_candidates(candidates);
+                                    state.update_candidates(&candidates);
                                     state.preedit_text = preedit_text;
                                     state.has_prev = args.has_prev;
                                     state.has_next = args.has_next;

@@ -2,7 +2,6 @@
 
 use fcitx5_dbus::controller::ControllerProxyBlocking;
 use fcitx5_dbus::input_context::InputContextProxyBlocking;
-use nvim_oxi::api::Buffer;
 use std::sync::{Arc, Mutex};
 
 use crate::fcitx5::candidates::CandidateState;

@@ -142,11 +142,6 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
             let char_arg = if let Ok(char_obj) = api::get_vvar::<String>("char") {
                 char_obj
             } else {
-                api::echo(
-                    vec![("failed to get char arg", None)],
-                    false,
-                    &EchoOpts::builder().build(),
-                )?;
                 return Ok::<_, oxi::Error>(false);
             };
             let char_arg = char_arg.as_str();
@@ -161,10 +156,10 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
             let candidate_state_clone = candidate_state.clone();
             let mut guard = candidate_state_clone.lock().unwrap();
 
-            if guard.is_visible && !guard.candidates.is_empty() {
-                // Get the first character (should be only one)
-                let c = char_arg.chars().next().unwrap();
+            // Get the first character (should be only one)
+            let c = char_arg.chars().next().unwrap();
 
+            if guard.is_visible && !guard.candidates.is_empty() {
                 match c {
                     '1'..='9' => {
                         // Direct candidate selection by number
@@ -186,9 +181,6 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
 
                                 // Insert the candidate text
                                 api::input(text)?;
-
-                                // Return true to cancel the original key press
-                                return Ok(true);
                             }
                         }
                     }
@@ -196,41 +188,31 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
                     '\t' => {
                         guard.select_next();
                         guard.update_display()?;
-                        return Ok(true); // Cancel the tab key
                     }
                     // Shift-Tab for previous candidate
                     '\u{19}' => {
                         // Shift-Tab character
                         guard.select_previous();
                         guard.update_display()?;
-                        return Ok(true); // Cancel the shift-tab key
                     }
                     // Escape to cancel
                     '\u{1b}' => {
                         // Escape character
                         guard.hide()?;
-                        return Ok(false); // Let escape propagate to exit insert mode
                     }
                     // Other keys should be passed through to Fcitx5
-                    _ => {
-                        // Send key to Fcitx5
-                        let code = fcitx5_dbus::utils::key_event::KeyVal::from_char(c);
-                        let state = fcitx5_dbus::utils::key_event::KeyState::NoState;
-
-                        // Process the key in Fcitx5
-                        match ctx_clone.process_key_event(code, 0, state, false, 0) {
-                            Ok(_) => {
-                                // Key was processed by Fcitx5
-                                return Ok(true); // Cancel the original key press
-                            }
-                            Err(_) => {
-                                // Error processing key, let it pass through
-                                return Ok(false);
-                            }
-                        }
-                    }
+                    _ => {}
                 }
             }
+
+            // Send key to Fcitx5
+            let code = fcitx5_dbus::utils::key_event::KeyVal::from_char(c);
+            let state = fcitx5_dbus::utils::key_event::KeyState::NoState;
+
+            // Process the key in Fcitx5
+            ctx_clone
+                .process_key_event(code, 0, state, false, 0)
+                .map_err(as_api_error)?;
 
             // By default, don't interfere with the key press
             Ok(false)
@@ -241,7 +223,7 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
     api::create_autocmd(["InsertCharPre"], &opts)?;
 
     api::echo(
-        vec![("Registered InsertCharPre autocmd", None)],
+        vec![("InsertCharPre autocmd registered", None)],
         false,
         &EchoOpts::builder().build(),
     )?;

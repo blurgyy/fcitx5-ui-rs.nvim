@@ -42,5 +42,4 @@ pub fn get_candidate_state() -> Arc<Mutex<CandidateState>> {
     let state = get_state();
     let state_guard = state.lock().unwrap();
     state_guard.candidate_state.clone()
-    // Arc::new(Mutex::new(state_guard.candidate_state.clone()))
 }

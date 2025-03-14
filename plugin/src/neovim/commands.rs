@@ -14,9 +14,9 @@ use std::{io::ErrorKind, sync::Mutex};
 
 use fcitx5_dbus::utils::key_event::{KeyState as Fcitx5KeyState, KeyVal as Fcitx5KeyVal};
 
-use crate::plugin::get_state;
 use crate::utils::as_api_error;
 use crate::{fcitx5::candidates::CandidateState, neovim::autocmds::setup_autocommands};
+use crate::{fcitx5::candidates::UpdateVariant, plugin::get_state};
 use crate::{
     fcitx5::{
         candidates::setup_candidate_receivers,
@@ -67,7 +67,7 @@ fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
             let state_guard = state.lock().unwrap();
             let candidate_state = state_guard.candidate_state.clone();
             let mut candidate_guard = candidate_state.lock().unwrap();
-            candidate_guard.mark_for_skip_next();
+            candidate_guard.mark_for_skip_next(UpdateVariant::Insert);
             let ctx = state_guard.ctx.as_ref().unwrap();
             let controller = state_guard.controller.as_ref().unwrap();
             set_im_en(controller, ctx).map_err(|e| as_api_error(e))?;
@@ -235,11 +235,30 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
     // Get the state and check for pending updates
     let mut guard = candidate_state.lock().unwrap();
     // Process any pending updates
-    let mut should_skip = false;
+    let mut skip_next = None;
     while let Some(update_type) = guard.pop_update() {
-        if should_skip {
-            continue;
+        match skip_next {
+            Some(UpdateVariant::Show) if matches!(update_type, UpdateType::Show) => {
+                skip_next.take();
+                continue;
+            }
+            Some(UpdateVariant::Insert) if matches!(update_type, UpdateType::Insert(_)) => {
+                skip_next.take();
+                continue;
+            }
+            Some(UpdateVariant::UpdateContent)
+                if matches!(update_type, UpdateType::UpdateContent) =>
+            {
+                skip_next.take();
+                continue;
+            }
+            Some(UpdateVariant::Hide) if matches!(update_type, UpdateType::Hide) => {
+                skip_next.take();
+                continue;
+            }
+            _ => {}
         }
+        eprintln!("executing event: {:?}", update_type);
         match update_type {
             UpdateType::Show => {
                 guard.is_visible = true;
@@ -255,9 +274,13 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
                 }
             }
             UpdateType::Hide => {
+                eprintln!("hiding: 1");
                 guard.is_visible = false;
+                eprintln!("hiding: 2");
                 if let Some(window) = guard.window_id.take() {
+                    eprintln!("hiding: 3");
                     if window.is_valid() {
+                        eprintln!("hiding: 4");
                         match window.close(true) {
                             Ok(_) => (),
                             Err(e) => eprintln!("Error closing window: {}", e),
@@ -289,7 +312,7 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
                     }
                 });
             }
-            UpdateType::SkipNext => should_skip = true,
+            UpdateType::SkipNext(variant) => skip_next = Some(variant),
         }
     }
 

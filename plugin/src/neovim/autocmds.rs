@@ -227,13 +227,6 @@ pub fn setup_special_character_hijacking_keymaps() -> oxi::Result<()> {
 
     buf.set_keymap(
         api::types::Mode::Insert,
-        "<Del>",
-        "<Cmd>Fcitx5TryInsertDelete<CR>",
-        &opts,
-    )?;
-
-    buf.set_keymap(
-        api::types::Mode::Insert,
         "<Esc>",
         "<Cmd>Fcitx5TryInsertEscape<CR>",
         &opts,

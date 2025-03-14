@@ -218,12 +218,6 @@ pub fn register_commands() -> oxi::Result<()> {
     )?;
 
     api::create_user_command(
-        "Fcitx5TryInsertDelete",
-        move |_| handle_special_key("<Del>", '\x7f'),
-        &CreateCommandOpts::default(),
-    )?;
-
-    api::create_user_command(
         "Fcitx5TryInsertEscape",
         move |_| handle_special_key("<Esc>", '\x1b'),
         &CreateCommandOpts::default(),

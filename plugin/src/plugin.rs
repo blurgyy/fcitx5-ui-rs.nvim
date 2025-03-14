@@ -25,18 +25,6 @@ impl Fcitx5Plugin {
             candidate_state: Arc::new(Mutex::new(CandidateState::new())),
         }
     }
-
-    pub fn is_initialized(&self) -> bool {
-        self.initialized
-    }
-
-    pub fn get_controller(&self) -> Option<&ControllerProxyBlocking<'static>> {
-        self.controller.as_ref()
-    }
-
-    pub fn get_ctx(&self) -> Option<&InputContextProxyBlocking<'static>> {
-        self.ctx.as_ref()
-    }
 }
 
 // Use lazy_static for thread-safe initialization

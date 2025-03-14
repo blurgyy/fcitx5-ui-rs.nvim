@@ -4,14 +4,14 @@ use nvim_oxi::{
     self as oxi,
     api::{
         self,
-        opts::{CreateAugroupOpts, CreateAutocmdOpts, EchoOpts},
+        opts::{CreateAugroupOpts, CreateAutocmdOpts, EchoOpts, SetKeymapOpts},
         Buffer,
     },
     libuv::AsyncHandle,
     Error as OxiError,
 };
 
-use crate::plugin::Fcitx5Plugin;
+use crate::plugin::{get_state, Fcitx5Plugin};
 use crate::utils::as_api_error;
 use crate::{
     fcitx5::commands::{set_im_en, set_im_zh},
@@ -19,10 +19,11 @@ use crate::{
 };
 use std::sync::{Arc, Mutex};
 
-use super::commands::process_candidate_updates;
-
 /// Setup autocommands for input method switching
-pub fn setup_autocommands(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
+pub fn setup_autocommands(
+    state: Arc<Mutex<Fcitx5Plugin>>,
+    trigger: AsyncHandle,
+) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
     // If already initialized, clean up first
@@ -112,13 +113,16 @@ pub fn setup_autocommands(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     drop(state_guard);
 
     // Set up the InsertCharPre event handler
-    setup_insert_char_pre(state.clone())?;
+    setup_insert_char_pre(trigger.clone())?;
+
+    setup_special_character_hijacking_keymaps()?;
 
     Ok(())
 }
 
 /// Setup InsertCharPre event to handle candidate selection
-pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
+pub fn setup_insert_char_pre(trigger: AsyncHandle) -> oxi::Result<()> {
+    let state = get_state();
     let state_guard = state.lock().unwrap();
 
     // Only proceed if initialized
@@ -149,6 +153,7 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
             };
             api::set_vvar("char", "")?;
             let char_arg = char_arg.as_str();
+            // println!("char: {}", char_arg);
 
             api::echo(vec![(char_arg, None)], false, &EchoOpts::builder().build())?;
 
@@ -176,12 +181,7 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
             guard.mark_for_update(); // Mark that content needs updating
 
             // Schedule an update on main thread
-            oxi::schedule({
-                let candidate_state_clone = candidate_state_clone.clone();
-                move |()| {
-                    let _ = process_candidate_updates(candidate_state_clone);
-                }
-            });
+            trigger.send()?;
 
             Ok(false)
         })
@@ -194,6 +194,30 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
         vec![("InsertCharPre autocmd registered", None)],
         false,
         &EchoOpts::builder().build(),
+    )?;
+
+    Ok(())
+}
+
+pub fn setup_special_character_hijacking_keymaps() -> oxi::Result<()> {
+    let state = get_state();
+    let state_guard = state.lock().unwrap();
+
+    // Only proceed if initialized
+    if !state_guard.initialized {
+        return Ok(());
+    }
+
+    drop(state_guard);
+
+    let mut buf = api::get_current_buf();
+
+    let opts = SetKeymapOpts::builder().noremap(true).silent(true).build();
+    buf.set_keymap(
+        api::types::Mode::Insert,
+        "<bs>",
+        "<cmd>Fcitx5TryDeleteChar<cr>",
+        &opts,
     )?;
 
     Ok(())

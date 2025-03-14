@@ -17,7 +17,6 @@ use nvim_oxi::{
 use std::{
     collections::VecDeque,
     sync::{Arc, Mutex},
-    time::Duration,
 };
 
 /// Structure for an input method candidate
@@ -79,29 +78,6 @@ impl CandidateState {
         if !self.candidates.is_empty() && self.selected_index >= self.candidates.len() {
             self.selected_index = 0;
         }
-    }
-
-    /// Select next candidate
-    pub fn select_next(&mut self) {
-        if !self.candidates.is_empty() {
-            self.selected_index = (self.selected_index + 1) % self.candidates.len();
-        }
-    }
-
-    /// Select previous candidate
-    pub fn select_previous(&mut self) {
-        if !self.candidates.is_empty() {
-            self.selected_index = if self.selected_index > 0 {
-                self.selected_index - 1
-            } else {
-                self.candidates.len() - 1
-            };
-        }
-    }
-
-    /// Get currently selected candidate if any
-    pub fn get_selected_candidate(&self) -> Option<&Candidate> {
-        self.candidates.get(self.selected_index)
     }
 
     /// Reset the candidate state
@@ -280,7 +256,7 @@ pub fn setup_candidate_receivers(
                                     } else {
                                         guard.mark_for_hide();
                                     }
-                                    trigger.send();
+                                    let _ = trigger.send();
                                     // eprintln!("sending events: {:?}", &guard.update_queue);
                                 }
                             }
@@ -314,12 +290,12 @@ pub fn setup_candidate_receivers(
                             if let Ok(mut guard) = candidate_state.lock() {
                                 guard.reset();
                                 guard.mark_for_hide();
+                                // Insert, if anything
                                 if !text_to_insert.is_empty() {
                                     guard.mark_for_insert(args.text.to_owned());
                                 }
-                                // eprintln!("sending events: {:?}", &guard.update_queue);
                             }
-                            trigger.send();
+                            let _ = trigger.send();
                         }
                     }
                 }

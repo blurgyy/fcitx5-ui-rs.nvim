@@ -24,6 +24,33 @@ use crate::{
     plugin::get_candidate_state,
 };
 
+fn simulate_backspace() -> oxi::Result<()> {
+    let mut buf = api::get_current_buf();
+    let win = api::get_current_win();
+    if let Ok((row_1b, col_0b)) = win.get_cursor() {
+        let row_0b = row_1b - 1;
+        if col_0b > 0 {
+            if let Some(line) = buf.get_lines(row_0b..=row_0b, true)?.next() {
+                // String::len() returns number of bytes, should calculate number of characters
+                let s = line.to_string();
+                let chars = s.chars();
+                let n_chars = chars.clone().count();
+                let new_line: String = chars.take(n_chars - 1).collect();
+                // replace whole line
+                buf.set_text(row_0b..row_0b, 0, col_0b, vec![new_line])?;
+            }
+        } else {
+            assert!(col_0b == 0);
+            if row_0b > 0 {
+                if let Some(line) = buf.get_lines(row_0b - 1..row_0b, true)?.next() {
+                    buf.set_text(row_0b - 1..row_0b, 0, 0, vec![line])?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Register all plugin commands
 pub fn register_commands() -> oxi::Result<()> {
     let state = get_state();
@@ -100,19 +127,54 @@ pub fn register_commands() -> oxi::Result<()> {
 
     api::create_user_command(
         "Fcitx5English",
-        move |_| {
-            let state_guard = state.lock().unwrap();
-            if !state_guard.initialized {
-                return Err(as_api_error(IoError::new(
-                    ErrorKind::Other,
-                    "Fcitx5 plugin not initialized. Run :Fcitx5Initialize first",
-                )));
+        {
+            let state = state.clone();
+            move |_| {
+                let state_guard = state.lock().unwrap();
+                if !state_guard.initialized {
+                    return Err(as_api_error(IoError::new(
+                        ErrorKind::Other,
+                        "Fcitx5 plugin not initialized. Run :Fcitx5Initialize first",
+                    )));
+                }
+
+                let controller = state_guard.controller.as_ref().unwrap();
+                let ctx = state_guard.ctx.as_ref().unwrap();
+
+                set_im_en(controller, ctx).map_err(as_api_error)
             }
+        },
+        &CreateCommandOpts::default(),
+    )?;
 
-            let controller = state_guard.controller.as_ref().unwrap();
-            let ctx = state_guard.ctx.as_ref().unwrap();
-
-            set_im_en(controller, ctx).map_err(as_api_error)
+    api::create_user_command(
+        "Fcitx5TryDeleteChar",
+        {
+            let state = state.clone();
+            move |_| {
+                let state_guard = state.lock().unwrap();
+                if !state_guard.initialized {
+                    // eprintln!("passing through");
+                    oxi::schedule(move |_| simulate_backspace());
+                    return Ok::<_, oxi::Error>(());
+                }
+                let mut candidate_guard = state_guard.candidate_state.lock().unwrap();
+                if !candidate_guard.is_visible {
+                    oxi::schedule(move |_| simulate_backspace());
+                    return Ok::<_, oxi::Error>(());
+                }
+                let ctx = state_guard.ctx.as_ref().unwrap();
+                let fcitx5_key_code = fcitx5_dbus::utils::key_event::KeyVal::DELETE;
+                let fcitx5_key_state = fcitx5_dbus::utils::key_event::KeyState::NoState;
+                ctx.process_key_event(fcitx5_key_code, 0, fcitx5_key_state, false, 0)
+                    .map_err(as_api_error)?;
+                candidate_guard.mark_for_update();
+                drop(candidate_guard);
+                oxi::schedule(move |_| {
+                    let _ = process_candidate_updates(get_candidate_state());
+                });
+                Ok(())
+            }
         },
         &CreateCommandOpts::default(),
     )?;
@@ -128,15 +190,15 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
     while let Some(update_type) = guard.pop_update() {
         match update_type {
             UpdateType::Show => {
-                guard.setup_window();
-                guard.update_display();
+                guard.setup_window()?;
+                guard.update_display()?;
 
                 // Show the window (this is now safe to call)
                 if let Some(window) = &guard.window_id {
                     if !window.is_valid() {
                         // Window was invalidated, recreate it
                         guard.window_id = None;
-                        guard.setup_window();
+                        guard.setup_window()?;
                     }
                 }
             }
@@ -152,7 +214,7 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
                 guard.is_visible = false;
             }
             UpdateType::UpdateContent => {
-                guard.update_display();
+                guard.update_display()?;
             }
             UpdateType::Insert(s) => {
                 // NB: must use oxi::schedule here, otherwise it hangs/segfaults at runtime
@@ -210,13 +272,13 @@ pub fn initialize_fcitx5() -> oxi::Result<()> {
     let trigger = AsyncHandle::new(move || process_candidate_updates(get_candidate_state()))?;
 
     // Setup candidate receivers
-    setup_candidate_receivers(&ctx, candidate_state, trigger).map_err(as_api_error)?;
+    setup_candidate_receivers(&ctx, candidate_state, trigger.clone()).map_err(as_api_error)?;
 
     // Release the lock before setting up autocommands
     drop(state_guard);
 
     // Setup autocommands
-    setup_autocommands(state.clone())?;
+    setup_autocommands(state.clone(), trigger)?;
 
     api::echo(
         vec![("Fcitx5 plugin initialized and activated", None)],

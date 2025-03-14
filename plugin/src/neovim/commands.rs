@@ -256,7 +256,6 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
             }
             _ => {}
         }
-        eprintln!("executing event: {:?}", update_type);
         match update_type {
             UpdateType::Show => {
                 guard.is_visible = true;

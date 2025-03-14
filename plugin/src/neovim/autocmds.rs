@@ -152,7 +152,6 @@ pub fn setup_insert_char_pre(trigger: AsyncHandle) -> oxi::Result<()> {
                 return Ok::<_, oxi::Error>(false);
             };
             let char_arg = char_arg.as_str();
-            println!("char: {}", char_arg);
 
             if char_arg.is_empty() {
                 return Ok(false);

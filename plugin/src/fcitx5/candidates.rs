@@ -12,7 +12,7 @@ use nvim_oxi::{
             WindowBorder, WindowConfig, WindowRelativeTo, WindowStyle, WindowTitle,
             WindowTitlePosition,
         },
-        Buffer, Window,
+        Buffer,
     },
     libuv::AsyncHandle,
 };
@@ -20,10 +20,8 @@ use std::{
     collections::VecDeque,
     sync::{Arc, Mutex},
 };
-use tokio::sync::mpsc;
 
 use crate::plugin::get_candidate_window;
-use crate::utils::as_api_error;
 
 /// Structure for an input method candidate
 #[derive(Debug, Clone)]
@@ -34,9 +32,15 @@ pub struct Candidate {
 
 #[derive(Clone, Debug, Copy)]
 pub enum UpdateVariant {
+    #[allow(dead_code)]
     Show,
+
+    #[allow(dead_code)]
     Hide,
+
     Insert,
+
+    #[allow(dead_code)]
     UpdateContent,
 }
 
@@ -115,7 +119,7 @@ impl CandidateState {
 
         // Create the floating window for candidates if needed
         let candidate_window = get_candidate_window();
-        let mut candidate_window_guard = candidate_window.lock().unwrap();
+        let candidate_window_guard = candidate_window.lock().unwrap();
         if candidate_window_guard.is_none() {
             // Create window options
             let opts = WindowConfig::builder()
@@ -141,8 +145,8 @@ impl CandidateState {
                     let mut candidate_window_guard = candidate_window.lock().unwrap();
                     let mut window = api::open_win(&buffer, false, &opts).unwrap();
                     // Set window options
-                    window.set_option("winblend", 10);
-                    window.set_option("wrap", true);
+                    let _ = window.set_option("winblend", 10);
+                    let _ = window.set_option("wrap", true);
                     candidate_window_guard.replace(window);
                 }
             });
@@ -274,7 +278,6 @@ pub fn setup_candidate_receivers(
                                     } else {
                                         guard.mark_for_hide();
                                     }
-                                    // eprintln!("sending events: {:?}", &guard.update_queue);
                                 }
                                 let _ = trigger.send();
                             }
@@ -324,17 +327,14 @@ pub fn setup_candidate_receivers(
         }
     });
 
+    // FIXME: this thread does not seem to do shit
     std::thread::spawn({
         let forward_ctx = ctx.clone();
         move || {
-            eprintln!("forward thread spawn");
             match forward_ctx.receive_forward_key() {
                 Ok(forward_signal) => {
-                    eprintln!("got ok forward signal iterator!");
                     for signal in forward_signal {
-                        eprintln!("got forward signal: {:?}", signal);
                         if let Ok(args) = signal.args() {
-                            eprintln!("forwarding key: {:?}", args);
                             if args.is_release {
                                 return;
                             }
@@ -344,13 +344,11 @@ pub fn setup_candidate_receivers(
                                 Some(Fcitx5KeyState::Alt) => "<M-",
                                 Some(Fcitx5KeyState::Shift) => "<S-",
                                 _ => {
-                                    ""
-                                    // return; // not handled
+                                    "" // no modifier
                                 }
                             };
                             key.push_str(&modifier_prefix);
                             key.push(args.sym as u8 as char);
-                            eprintln!("passing key: '{}'", key);
                             oxi::schedule(move |_| {
                                 oxi::print!("There");
                                 api::feedkeys(&key, api::types::Mode::Normal, true)

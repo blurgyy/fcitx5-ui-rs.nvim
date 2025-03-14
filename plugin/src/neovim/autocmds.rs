@@ -4,7 +4,7 @@ use nvim_oxi::{
     self as oxi,
     api::{
         self,
-        opts::{CreateAugroupOpts, CreateAutocmdOpts, EchoOpts, SetKeymapOpts},
+        opts::{CreateAugroupOpts, CreateAutocmdOpts},
         Buffer,
     },
     libuv::AsyncHandle,
@@ -20,7 +20,7 @@ use crate::{
 use std::sync::{Arc, Mutex};
 
 /// Setup autocommands for input method switching
-pub fn setup_autocommands(
+pub fn register_autocommands(
     state: Arc<Mutex<Fcitx5Plugin>>,
     trigger: AsyncHandle,
 ) -> oxi::Result<()> {
@@ -115,9 +115,16 @@ pub fn setup_autocommands(
     // Set up the InsertCharPre event handler
     setup_insert_char_pre(trigger.clone())?;
 
-    setup_special_character_hijacking_keymaps()?;
-
     Ok(())
+}
+
+pub fn deregister_autocommands(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
+    let mut state_guard = state.lock().unwrap();
+    if let Some(augroup_id) = state_guard.augroup_id.take() {
+        api::del_augroup_by_id(augroup_id).map_err(|e| e.into())
+    } else {
+        Ok(())
+    }
 }
 
 /// Setup InsertCharPre event to handle candidate selection
@@ -188,49 +195,7 @@ pub fn setup_insert_char_pre(trigger: AsyncHandle) -> oxi::Result<()> {
     // Register the autocmd for InsertCharPre
     api::create_autocmd(["InsertCharPre"], &opts)?;
 
-    api::echo(
-        vec![("InsertCharPre autocmd registered", None)],
-        false,
-        &EchoOpts::builder().build(),
-    )?;
-
-    Ok(())
-}
-
-pub fn setup_special_character_hijacking_keymaps() -> oxi::Result<()> {
-    let state = get_state();
-    let state_guard = state.lock().unwrap();
-
-    // Only proceed if initialized
-    if !state_guard.initialized {
-        return Ok(());
-    }
-
-    drop(state_guard);
-
-    let mut buf = api::get_current_buf();
-
-    let opts = SetKeymapOpts::builder().noremap(true).silent(true).build();
-    buf.set_keymap(
-        api::types::Mode::Insert,
-        "<BS>",
-        "<Cmd>Fcitx5TryInsertBackSpace<CR>",
-        &opts,
-    )?;
-
-    buf.set_keymap(
-        api::types::Mode::Insert,
-        "<CR>",
-        "<Cmd>Fcitx5TryInsertCarriageReturn<CR>",
-        &opts,
-    )?;
-
-    buf.set_keymap(
-        api::types::Mode::Insert,
-        "<Esc>",
-        "<Cmd>Fcitx5TryInsertEscape<CR>",
-        &opts,
-    )?;
+    oxi::print!("InsertCharPre autocmd registered");
 
     Ok(())
 }

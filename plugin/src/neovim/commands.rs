@@ -2,10 +2,7 @@
 
 use nvim_oxi::{
     self as oxi,
-    api::{
-        self,
-        opts::{CreateCommandOpts, EchoOpts},
-    },
+    api::{self, opts::CreateCommandOpts},
     libuv::AsyncHandle,
 };
 
@@ -16,7 +13,9 @@ use fcitx5_dbus::utils::key_event::{
     KeyState as Fcitx5KeyState, KeyVal as Fcitx5KeyVal,
 };
 
-use crate::{fcitx5::candidates::CandidateState, neovim::autocmds::setup_autocommands};
+use crate::{
+    fcitx5::candidates::CandidateState, neovim::autocmds::register_autocommands,
+};
 use crate::{fcitx5::candidates::UpdateVariant, plugin::get_state};
 use crate::{
     fcitx5::{
@@ -30,6 +29,11 @@ use crate::{
     plugin::Fcitx5Plugin,
 };
 use crate::{plugin::get_candidate_window, utils::as_api_error};
+
+use super::{
+    autocmds::deregister_autocommands,
+    keymaps::{deregister_keymaps, register_keymaps},
+};
 
 fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
     let state = get_state();
@@ -104,13 +108,13 @@ pub fn register_commands() -> oxi::Result<()> {
     // Define user commands
     api::create_user_command(
         "Fcitx5Initialize",
-        |_| initialize_fcitx5(get_state()),
+        |_| initialize_plugin(get_state()),
         &CreateCommandOpts::default(),
     )?;
 
     api::create_user_command(
         "Fcitx5Reset",
-        |_| reset_fcitx5(get_state()),
+        |_| reset_plugin(get_state()),
         &CreateCommandOpts::default(),
     )?;
 
@@ -133,17 +137,12 @@ pub fn register_commands() -> oxi::Result<()> {
 
                 toggle_im(controller, ctx).map_err(as_api_error)?;
 
-                api::echo(
-                    vec![(
-                        format!(
-                            "current IM: {}",
-                            controller.current_input_method().map_err(as_api_error)?
-                        ),
-                        None,
-                    )],
-                    false,
-                    &EchoOpts::builder().build(),
-                )
+                oxi::print!(
+                    "current IM: {}",
+                    controller.current_input_method().map_err(as_api_error)?
+                );
+
+                Ok(())
             }
         },
         &CreateCommandOpts::default(),
@@ -306,15 +305,11 @@ pub fn process_candidate_updates(
 }
 
 /// Initialize the connection and input context
-pub fn initialize_fcitx5(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
+pub fn initialize_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
     if state_guard.initialized {
-        api::echo(
-            vec![("Fcitx5 plugin already initialized", None)],
-            false,
-            &EchoOpts::builder().build(),
-        )?;
+        oxi::print!("Fcitx5 plugin already initialized");
         return Ok(());
     }
 
@@ -341,34 +336,20 @@ pub fn initialize_fcitx5(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     drop(state_guard);
 
     // Setup autocommands
-    setup_autocommands(state.clone(), trigger)?;
+    register_autocommands(state.clone(), trigger)?;
 
-    api::echo(
-        vec![("Fcitx5 plugin initialized and activated", None)],
-        false,
-        &EchoOpts::builder().build(),
-    )?;
+    register_keymaps(state.clone())?;
 
     Ok(())
 }
 
 /// Reset the plugin completely - close connections and clean up state
-pub fn reset_fcitx5(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
+pub fn reset_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
     if !state_guard.initialized && state_guard.controller.is_none() {
-        api::echo(
-            vec![("Fcitx5 plugin already reset", None)],
-            false,
-            &EchoOpts::builder().build(),
-        )?;
+        oxi::print!("Fcitx5 plugin already reset");
         return Ok(());
-    }
-
-    // Delete the augroup if it exists
-    if let Some(augroup_id) = state_guard.augroup_id {
-        api::del_augroup_by_id(augroup_id)?;
-        state_guard.augroup_id = None;
     }
 
     // Reset and clear the input context if it exists
@@ -381,11 +362,11 @@ pub fn reset_fcitx5(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     state_guard.ctx = None;
     state_guard.initialized = false;
 
-    api::echo(
-        vec![("Fcitx5 plugin reset completely", None)],
-        false,
-        &EchoOpts::builder().build(),
-    )?;
+    drop(state_guard);
+
+    // Delete the augroup if it exists
+    deregister_autocommands(state)?;
+    deregister_keymaps()?;
 
     Ok(())
 }

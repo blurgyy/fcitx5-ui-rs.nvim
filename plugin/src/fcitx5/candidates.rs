@@ -12,16 +12,27 @@ use nvim_oxi::{
         },
         Buffer, Window,
     },
+    libuv::AsyncHandle,
 };
-use std::sync::{Arc, Mutex};
-
-use crate::neovim::commands::show_candidate_window;
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 /// Structure for an input method candidate
 #[derive(Debug, Clone)]
 pub struct Candidate {
     pub display: String,
     pub text: String,
+}
+
+#[derive(Clone, Debug)]
+pub enum UpdateType {
+    Show,
+    Hide,
+    Insert(String),
+    UpdateContent,
 }
 
 /// State for candidate selection UI
@@ -43,6 +54,8 @@ pub struct CandidateState {
     pub has_next: bool,
     /// Whether candidate window is currently visible
     pub is_visible: bool,
+    /// Whether the window should be updated
+    pub update_queue: VecDeque<UpdateType>,
 }
 
 impl CandidateState {
@@ -56,6 +69,7 @@ impl CandidateState {
             has_prev: false,
             has_next: false,
             is_visible: false,
+            update_queue: VecDeque::new(),
         }
     }
 
@@ -193,29 +207,31 @@ impl CandidateState {
         Ok(())
     }
 
-    /// Show the candidate window
-    pub fn show(&mut self) -> oxi::Result<()> {
-        if !self.is_visible && !self.candidates.is_empty() {
-            self.setup_window()?;
-            self.update_display()?;
+    // Rather than directly showing/hiding, mark for update
+    pub fn mark_for_show(&mut self) {
+        if !self.candidates.is_empty() {
+            self.update_queue.push_back(UpdateType::Show);
             self.is_visible = true;
         }
-        Ok(())
     }
 
-    /// Hide the candidate window
-    pub fn hide(&mut self) -> oxi::Result<()> {
-        println!("trying to hiding window {:?}", &self.window_id);
-        if let Some(window) = self.window_id.as_ref() {
-            println!("we do have a window");
-            if window.is_valid() {
-                println!("window is valid!");
-                window.clone().close(true)?
-            }
-            self.window_id = None;
-            self.is_visible = false;
+    pub fn mark_for_hide(&mut self) {
+        self.update_queue.push_back(UpdateType::Hide);
+        self.is_visible = false;
+    }
+
+    pub fn mark_for_insert(&mut self, text: String) {
+        self.update_queue.push_back(UpdateType::Insert(text));
+    }
+
+    pub fn mark_for_update(&mut self) {
+        if self.is_visible {
+            self.update_queue.push_back(UpdateType::UpdateContent);
         }
-        Ok(())
+    }
+
+    pub fn pop_update(&mut self) -> Option<UpdateType> {
+        self.update_queue.pop_front()
     }
 }
 
@@ -223,18 +239,17 @@ impl CandidateState {
 pub fn setup_candidate_receivers(
     ctx: &InputContextProxyBlocking<'static>,
     candidate_state: Arc<Mutex<CandidateState>>,
+    trigger: AsyncHandle,
 ) -> Result<()> {
     // Spawn thread to handle update signals
     std::thread::spawn({
+        let trigger = trigger.clone();
         let update_ctx = ctx.clone();
         let candidate_state = candidate_state.clone();
         move || {
-            // Use a timeout to avoid blocking indefinitely
             match update_ctx.receive_update_client_side_ui() {
                 Ok(update_signal) => {
                     for signal in update_signal {
-                        // eprintln!("Got signal with args: {:?}", signal.args());
-                        // Process signal with timeout to avoid hanging
                         match signal.args() {
                             Ok(args) => {
                                 // Convert candidate data from Fcitx5 format
@@ -253,26 +268,25 @@ pub fn setup_candidate_receivers(
                                 }
 
                                 // Update our candidate state
-                                if let Ok(mut state) = candidate_state.lock() {
-                                    state.update_candidates(&candidates);
-                                    state.preedit_text = preedit_text;
-                                    state.has_prev = args.has_prev;
-                                    state.has_next = args.has_next;
+                                if let Ok(mut guard) = candidate_state.lock() {
+                                    guard.update_candidates(&candidates);
+                                    guard.preedit_text = preedit_text;
+                                    guard.has_prev = args.has_prev;
+                                    guard.has_next = args.has_next;
 
-                                    // Don't try to update UI from this thread
-                                    // Instead, set a flag that Neovim should check periodically
-                                    state.is_visible = !state.candidates.is_empty();
+                                    // Mark for update based on whether we have candidates
+                                    if !guard.candidates.is_empty() {
+                                        guard.mark_for_show();
+                                    } else {
+                                        guard.mark_for_hide();
+                                    }
+                                    trigger.send();
+                                    // eprintln!("sending events: {:?}", &guard.update_queue);
                                 }
                             }
                             Err(_) => {
-                                // Just log and continue
                                 eprintln!("Error processing update signal");
                             }
-                        }
-
-                        // Trigger immediate UI update after dropping lock
-                        if let Err(e) = show_candidate_window(candidate_state.clone()) {
-                            eprintln!("Failed updating candidate window on update: {}", e);
                         }
                     }
                 }
@@ -285,6 +299,7 @@ pub fn setup_candidate_receivers(
 
     // Spawn thread to handle commit signals
     std::thread::spawn({
+        let trigger = trigger.clone();
         let commit_ctx = ctx.clone();
         let candidate_state = candidate_state.clone();
 
@@ -292,14 +307,19 @@ pub fn setup_candidate_receivers(
             match commit_ctx.receive_commit_string() {
                 Ok(commit_signal) => {
                     for signal in commit_signal {
-                        if let Ok(_) = signal.args() {
+                        if let Ok(args) = signal.args() {
+                            let text_to_insert = args.text.to_owned();
+
                             // When a string is committed, mark for hiding
-                            let mut guard = candidate_state.lock().unwrap();
-                            guard.reset();
-                            drop(guard);
-                            if let Err(e) = show_candidate_window(candidate_state.clone()) {
-                                eprintln!("Failed updating candidate window on commit: {}", e);
+                            if let Ok(mut guard) = candidate_state.lock() {
+                                guard.reset();
+                                guard.mark_for_hide();
+                                if !text_to_insert.is_empty() {
+                                    guard.mark_for_insert(args.text.to_owned());
+                                }
+                                // eprintln!("sending events: {:?}", &guard.update_queue);
                             }
+                            trigger.send();
                         }
                     }
                 }

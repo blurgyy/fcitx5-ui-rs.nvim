@@ -6,12 +6,13 @@ use nvim_oxi::{
         self,
         opts::{CreateCommandOpts, EchoOpts},
     },
+    libuv::AsyncHandle,
 };
 
 use std::{io::Error as IoError, sync::Arc};
 use std::{io::ErrorKind, sync::Mutex};
 
-use crate::fcitx5::connection::prepare;
+use crate::fcitx5::{candidates::UpdateType, connection::prepare};
 use crate::plugin::get_state;
 use crate::utils::as_api_error;
 use crate::{fcitx5::candidates::CandidateState, neovim::autocmds::setup_autocommands};
@@ -20,7 +21,7 @@ use crate::{
         candidates::setup_candidate_receivers,
         commands::{set_im_en, set_im_zh, toggle_im},
     },
-    plugin::Fcitx5Plugin,
+    plugin::get_candidate_state,
 };
 
 /// Register all plugin commands
@@ -31,12 +32,6 @@ pub fn register_commands() -> oxi::Result<()> {
     api::create_user_command(
         "Fcitx5Initialize",
         |_| initialize_fcitx5(),
-        &CreateCommandOpts::default(),
-    )?;
-
-    api::create_user_command(
-        "Fcitx5Deactivate",
-        |_| deactivate_fcitx5(),
         &CreateCommandOpts::default(),
     )?;
 
@@ -125,68 +120,64 @@ pub fn register_commands() -> oxi::Result<()> {
     Ok(())
 }
 
-/// Setup a timer to update the candidate window using a background thread
-/// instead of Lua timers to avoid potential Lua callback issues
-fn setup_candidate_timer(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
-    // Spawn a background thread for the timer
-    std::thread::spawn(move || {
-        loop {
-            // Sleep for 100ms
-            std::thread::sleep(std::time::Duration::from_millis(100));
+// Process updates when scheduled
+pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) -> oxi::Result<()> {
+    // Get the state and check for pending updates
+    let mut guard = candidate_state.lock().unwrap();
+    // Process any pending updates
+    while let Some(update_type) = guard.pop_update() {
+        match update_type {
+            UpdateType::Show => {
+                guard.setup_window();
+                guard.update_display();
 
-            // Try to acquire locks non-blocking
-            let state_guard = state.lock().unwrap();
-
-            if !state_guard.initialized {
-                continue;
+                // Show the window (this is now safe to call)
+                if let Some(window) = &guard.window_id {
+                    if !window.is_valid() {
+                        // Window was invalidated, recreate it
+                        guard.window_id = None;
+                        guard.setup_window();
+                    }
+                }
             }
-
-            // Get a clone of candidate state
-            let candidate_state = state_guard.candidate_state.clone();
-            drop(state_guard);
-
-            let candidate_guard = candidate_state.lock().unwrap();
-
-            // eprintln!(
-            //     " --> candidate.is_visible: {}, candidate.candidates: {:?}",
-            //     candidate_guard.is_visible,
-            //     candidate_guard.candidates.clone(),
-            // );
-
-            // Check if we need to update the UI
-            let should_show = candidate_guard.is_visible && !candidate_guard.candidates.is_empty();
-            let should_hide = !candidate_guard.is_visible && candidate_guard.window_id.is_some();
-
-            // Drop lock before interacting with Neovim API
-            drop(candidate_guard);
-
-            // Schedule UI updates through Neovim's RPC mechanism (which is thread-safe)
-            if should_show {
-                // We can't directly call nvim_oxi functions from another thread
-                // So we use a Lua command to be executed in the main thread
-                let _ = show_candidate_window(candidate_state.clone());
-            } else if should_hide {
-                let _ = hide_candidate_window(candidate_state.clone());
+            UpdateType::Hide => {
+                if let Some(window) = guard.window_id.take() {
+                    if window.is_valid() {
+                        match window.close(true) {
+                            Ok(_) => (),
+                            Err(e) => eprintln!("Error closing window: {}", e),
+                        }
+                    }
+                }
+                guard.is_visible = false;
+            }
+            UpdateType::UpdateContent => {
+                guard.update_display();
+            }
+            UpdateType::Insert(s) => {
+                // NB: must use oxi::schedule here, otherwise it hangs/segfaults at runtime
+                oxi::schedule(move |_| {
+                    // Insert text directly at cursor position
+                    let mut win = api::get_current_win();
+                    let mut buf = api::get_current_buf();
+                    if let Ok((row, col)) = win.get_cursor() {
+                        // Convert to 0-indexed for the API
+                        let row_idx = row - 1;
+                        // Insert text at cursor position
+                        let _ = buf.set_text(
+                            row_idx..row_idx, // Only modify the current line
+                            col,              // Start column
+                            col, // End column (same as start to insert without replacing)
+                            vec![s.clone()], // Text to insert as a Vec<String>
+                        );
+                        // Move cursor to end of inserted text
+                        let _ = win.set_cursor(row, col + s.len());
+                    }
+                });
             }
         }
-    });
-
-    Ok(())
-}
-
-pub fn show_candidate_window(candidate_state: Arc<Mutex<CandidateState>>) -> oxi::Result<()> {
-    let mut guard = candidate_state.lock().unwrap();
-    if guard.is_visible && !guard.candidates.is_empty() {
-        guard.setup_window()?;
-        guard.update_display()?;
-        guard.show()?;
     }
-    Ok(())
-}
 
-pub fn hide_candidate_window(candidate_state: Arc<Mutex<CandidateState>>) -> oxi::Result<()> {
-    let mut guard = candidate_state.lock().unwrap();
-    guard.hide()?;
     Ok(())
 }
 
@@ -215,8 +206,11 @@ pub fn initialize_fcitx5() -> oxi::Result<()> {
     state_guard.ctx = Some(ctx.clone());
     state_guard.initialized = true;
 
+    // Spawn a thread for updating the candidate window
+    let trigger = AsyncHandle::new(move || process_candidate_updates(get_candidate_state()))?;
+
     // Setup candidate receivers
-    setup_candidate_receivers(&ctx, candidate_state).map_err(as_api_error)?;
+    setup_candidate_receivers(&ctx, candidate_state, trigger).map_err(as_api_error)?;
 
     // Release the lock before setting up autocommands
     drop(state_guard);
@@ -224,44 +218,8 @@ pub fn initialize_fcitx5() -> oxi::Result<()> {
     // Setup autocommands
     setup_autocommands(state.clone())?;
 
-    setup_candidate_timer(state.clone())?;
-
     api::echo(
         vec![("Fcitx5 plugin initialized and activated", None)],
-        false,
-        &EchoOpts::builder().build(),
-    )?;
-
-    Ok(())
-}
-
-/// Deactivate the plugin but keep connections
-pub fn deactivate_fcitx5() -> oxi::Result<()> {
-    let state = get_state();
-    let mut state_guard = state.lock().unwrap();
-
-    if !state_guard.initialized {
-        api::echo(
-            vec![("Fcitx5 plugin not initialized", None)],
-            false,
-            &EchoOpts::builder().build(),
-        )?;
-        return Ok(());
-    }
-
-    // Set initialized to false to disable callbacks
-    state_guard.initialized = false;
-
-    // If we have an input context, reset it
-    if let Some(ctx) = &state_guard.ctx {
-        if let Some(controller) = &state_guard.controller {
-            set_im_en(controller, ctx).map_err(as_api_error)?;
-        }
-        ctx.reset().map_err(as_api_error)?;
-    }
-
-    api::echo(
-        vec![("Fcitx5 plugin deactivated", None)],
         false,
         &EchoOpts::builder().build(),
     )?;

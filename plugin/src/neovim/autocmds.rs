@@ -7,6 +7,7 @@ use nvim_oxi::{
         opts::{CreateAugroupOpts, CreateAutocmdOpts, EchoOpts},
         Buffer,
     },
+    libuv::AsyncHandle,
     Error as OxiError,
 };
 
@@ -17,6 +18,8 @@ use crate::{
     plugin::get_candidate_state,
 };
 use std::sync::{Arc, Mutex};
+
+use super::commands::process_candidate_updates;
 
 /// Setup autocommands for input method switching
 pub fn setup_autocommands(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
@@ -160,51 +163,6 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
             // Get the first character (should be only one)
             let c = char_arg.chars().next().unwrap();
 
-            if guard.is_visible && !guard.candidates.is_empty() {
-                match c {
-                    '1'..='9' => {
-                        // Direct candidate selection by number
-                        let idx = (c as u8 - b'1') as usize;
-                        if idx < guard.candidates.len() {
-                            guard.selected_index = idx;
-
-                            // Select this candidate
-                            if let Some(candidate) = guard.get_selected_candidate() {
-                                // Use the candidate's text
-                                let text = candidate.text.clone();
-
-                                // // Hide the candidate window
-                                // guard.hide()?;
-
-                                // // We need to clear the character that triggered this (the number)
-                                // // and insert the candidate instead
-                                // api::input("<BS>")?; // Delete the number key
-
-                                // // Insert the candidate text
-                                // api::input(text)?;
-                                api::set_vvar("char", text)?;
-                            }
-                        }
-                    }
-                    // Tab for next candidate
-                    '\t' => {
-                        guard.select_next();
-                    }
-                    // Shift-Tab for previous candidate
-                    '\u{19}' => {
-                        // Shift-Tab character
-                        guard.select_previous();
-                    }
-                    // Escape to cancel
-                    '\u{1b}' => {
-                        // Escape character
-                        guard.hide()?;
-                    }
-                    // Other keys should be passed through to Fcitx5
-                    _ => {}
-                }
-            }
-
             // Send key to Fcitx5
             let code = fcitx5_dbus::utils::key_event::KeyVal::from_char(c);
             let state = fcitx5_dbus::utils::key_event::KeyState::NoState;
@@ -214,7 +172,17 @@ pub fn setup_insert_char_pre(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()>
                 .process_key_event(code, 0, state, false, 0)
                 .map_err(as_api_error)?;
 
-            // By default, don't interfere with the key press
+            // After processing key:
+            guard.mark_for_update(); // Mark that content needs updating
+
+            // Schedule an update on main thread
+            oxi::schedule({
+                let candidate_state_clone = candidate_state_clone.clone();
+                move |()| {
+                    let _ = process_candidate_updates(candidate_state_clone);
+                }
+            });
+
             Ok(false)
         })
         .build();

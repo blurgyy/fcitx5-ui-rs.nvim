@@ -3,7 +3,6 @@
   rustPlatform,
 
   pkg-config,
-  luajit,
   dbus,
 }:
 
@@ -17,7 +16,6 @@ rustPlatform.buildRustPackage {
     pkg-config
   ];
   buildInputs = [
-    luajit
     dbus.dev
   ];
 

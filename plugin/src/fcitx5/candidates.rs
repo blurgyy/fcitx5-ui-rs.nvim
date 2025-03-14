@@ -20,6 +20,10 @@ use std::{
     collections::VecDeque,
     sync::{Arc, Mutex},
 };
+use tokio::sync::mpsc;
+
+use crate::plugin::get_candidate_window;
+use crate::utils::as_api_error;
 
 /// Structure for an input method candidate
 #[derive(Debug, Clone)]
@@ -53,8 +57,6 @@ pub struct CandidateState {
     pub selected_index: usize,
     /// Buffer ID for the candidate window
     pub buffer_id: Option<Buffer>,
-    /// Window ID for the candidate window
-    pub window_id: Option<Window>,
     /// Current preedit text
     pub preedit_text: String,
     /// Has previous page
@@ -75,7 +77,6 @@ impl CandidateState {
             candidates: Vec::new(),
             selected_index: 0,
             buffer_id: None,
-            window_id: None,
             preedit_text: String::new(),
             has_prev: false,
             has_next: false,
@@ -110,10 +111,12 @@ impl CandidateState {
         }
 
         // Make sure the buffer exists
-        let buffer = self.buffer_id.as_ref().unwrap();
+        let buffer = self.buffer_id.as_ref().unwrap().clone();
 
         // Create the floating window for candidates if needed
-        if self.window_id.is_none() {
+        let candidate_window = get_candidate_window();
+        let mut candidate_window_guard = candidate_window.lock().unwrap();
+        if candidate_window_guard.is_none() {
             // Create window options
             let opts = WindowConfig::builder()
                 .relative(WindowRelativeTo::Cursor)
@@ -131,13 +134,18 @@ impl CandidateState {
                 .build();
 
             // Open the window with our buffer
-            let mut window = api::open_win(buffer, false, &opts)?;
-
-            // Set window options
-            window.set_option("winblend", 10)?;
-            window.set_option("wrap", true)?;
-
-            self.window_id = Some(window);
+            drop(candidate_window_guard);
+            oxi::schedule({
+                let candidate_window = candidate_window.clone();
+                move |_| {
+                    let mut candidate_window_guard = candidate_window.lock().unwrap();
+                    let mut window = api::open_win(&buffer, false, &opts).unwrap();
+                    // Set window options
+                    window.set_option("winblend", 10);
+                    window.set_option("wrap", true);
+                    candidate_window_guard.replace(window);
+                }
+            });
         }
 
         Ok(())
@@ -266,9 +274,9 @@ pub fn setup_candidate_receivers(
                                     } else {
                                         guard.mark_for_hide();
                                     }
-                                    let _ = trigger.send();
                                     // eprintln!("sending events: {:?}", &guard.update_queue);
                                 }
+                                let _ = trigger.send();
                             }
                             Err(_) => {
                                 eprintln!("Error processing update signal");

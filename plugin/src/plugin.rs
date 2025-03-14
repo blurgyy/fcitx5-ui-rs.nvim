@@ -13,6 +13,7 @@ pub struct Fcitx5Plugin {
     pub augroup_id: Option<u32>,
     pub initialized: bool,
     pub candidate_state: Arc<Mutex<CandidateState>>,
+    pub candidate_window: Arc<Mutex<Option<nvim_oxi::api::Window>>>,
 }
 
 impl Fcitx5Plugin {
@@ -23,6 +24,7 @@ impl Fcitx5Plugin {
             augroup_id: None,
             initialized: false,
             candidate_state: Arc::new(Mutex::new(CandidateState::new())),
+            candidate_window: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -42,4 +44,11 @@ pub fn get_candidate_state() -> Arc<Mutex<CandidateState>> {
     let state = get_state();
     let state_guard = state.lock().unwrap();
     state_guard.candidate_state.clone()
+}
+
+// Get a reference to just the candidate Option<Window>
+pub fn get_candidate_window() -> Arc<Mutex<Option<nvim_oxi::api::Window>>> {
+    let state = get_state();
+    let state_guard = state.lock().unwrap();
+    state_guard.candidate_window.clone()
 }

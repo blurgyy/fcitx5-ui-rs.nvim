@@ -14,7 +14,6 @@ use std::{io::ErrorKind, sync::Mutex};
 
 use fcitx5_dbus::utils::key_event::{KeyState as Fcitx5KeyState, KeyVal as Fcitx5KeyVal};
 
-use crate::utils::as_api_error;
 use crate::{fcitx5::candidates::CandidateState, neovim::autocmds::setup_autocommands};
 use crate::{fcitx5::candidates::UpdateVariant, plugin::get_state};
 use crate::{
@@ -28,6 +27,7 @@ use crate::{
     fcitx5::{candidates::UpdateType, connection::prepare},
     plugin::Fcitx5Plugin,
 };
+use crate::{plugin::get_candidate_window, utils::as_api_error};
 
 fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
     let state = get_state();
@@ -262,18 +262,12 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
                 guard.is_visible = true;
                 guard.setup_window()?;
                 guard.update_display()?;
-
-                if let Some(window) = &guard.window_id {
-                    if !window.is_valid() {
-                        // Window was invalidated, recreate it
-                        guard.window_id = None;
-                        guard.setup_window()?;
-                    }
-                }
             }
             UpdateType::Hide => {
                 guard.is_visible = false;
-                if let Some(window) = guard.window_id.take() {
+                let candidate_window = get_candidate_window();
+                let mut candidate_window_guard = candidate_window.lock().unwrap();
+                if let Some(window) = candidate_window_guard.take() {
                     if window.is_valid() {
                         oxi::schedule(move |_| match window.close(true) {
                             Ok(_) => {}

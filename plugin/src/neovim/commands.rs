@@ -12,7 +12,9 @@ use nvim_oxi::{
 use std::{io::Error as IoError, sync::Arc};
 use std::{io::ErrorKind, sync::Mutex};
 
-use fcitx5_dbus::utils::key_event::{KeyState as Fcitx5KeyState, KeyVal as Fcitx5KeyVal};
+use fcitx5_dbus::utils::key_event::{
+    KeyState as Fcitx5KeyState, KeyVal as Fcitx5KeyVal,
+};
 
 use crate::{fcitx5::candidates::CandidateState, neovim::autocmds::setup_autocommands};
 use crate::{fcitx5::candidates::UpdateVariant, plugin::get_state};
@@ -231,7 +233,9 @@ pub fn register_commands() -> oxi::Result<()> {
 }
 
 // Process updates when scheduled
-pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) -> oxi::Result<()> {
+pub fn process_candidate_updates(
+    candidate_state: Arc<Mutex<CandidateState>>,
+) -> oxi::Result<()> {
     // Get the state and check for pending updates
     let mut guard = candidate_state.lock().unwrap();
     while let Some(update_type) = guard.pop_update() {
@@ -240,7 +244,9 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
                 guard.skip_next.take();
                 continue;
             }
-            Some(UpdateVariant::Insert) if matches!(update_type, UpdateType::Insert(_)) => {
+            Some(UpdateVariant::Insert)
+                if matches!(update_type, UpdateType::Insert(_)) =>
+            {
                 guard.skip_next.take();
                 continue;
             }
@@ -330,10 +336,12 @@ pub fn initialize_fcitx5(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     state_guard.initialized = true;
 
     // Spawn a thread for updating the candidate window
-    let trigger = AsyncHandle::new(move || process_candidate_updates(get_candidate_state()))?;
+    let trigger =
+        AsyncHandle::new(move || process_candidate_updates(get_candidate_state()))?;
 
     // Setup candidate receivers
-    setup_candidate_receivers(&ctx, candidate_state, trigger.clone()).map_err(as_api_error)?;
+    setup_candidate_receivers(&ctx, candidate_state, trigger.clone())
+        .map_err(as_api_error)?;
 
     // Release the lock before setting up autocommands
     drop(state_guard);

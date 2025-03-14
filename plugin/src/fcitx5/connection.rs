@@ -18,7 +18,8 @@ pub fn prepare() -> Result<(
     let controller = ControllerProxyBlocking::new(&conn)?;
     let input_method = InputMethodProxyBlocking::new(&conn)?;
 
-    let (p, _) = input_method.create_input_context(&[("program", "fcitx5-ui-rs.nvim")])?;
+    let (p, _) =
+        input_method.create_input_context(&[("program", "fcitx5-ui-rs.nvim")])?;
 
     let ctx = InputContextProxyBlocking::builder(&conn).path(p)?.build()?;
     ctx.set_capability(CapabilityFlag::ClientSideInputPanel)?;

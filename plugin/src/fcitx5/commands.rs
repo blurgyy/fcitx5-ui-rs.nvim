@@ -1,7 +1,9 @@
 //! Input method control functions
 
 use fcitx5_dbus::zbus::Result;
-use fcitx5_dbus::{controller::ControllerProxyBlocking, input_context::InputContextProxyBlocking};
+use fcitx5_dbus::{
+    controller::ControllerProxyBlocking, input_context::InputContextProxyBlocking,
+};
 
 /// Toggle between input methods
 pub fn toggle_im(

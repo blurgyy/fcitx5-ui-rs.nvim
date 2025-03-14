@@ -2,7 +2,8 @@
 
 use fcitx5_dbus::zbus::Result;
 use fcitx5_dbus::{
-    input_context::InputContextProxyBlocking, utils::key_event::KeyState as Fcitx5KeyState,
+    input_context::InputContextProxyBlocking,
+    utils::key_event::KeyState as Fcitx5KeyState,
 };
 use nvim_oxi::{
     self as oxi,
@@ -184,7 +185,8 @@ impl CandidateState {
             if self.has_prev || self.has_next {
                 lines.push("".to_string());
 
-                let mut paging = if self.has_prev { "< Prev " } else { "       " }.to_owned();
+                let mut paging =
+                    if self.has_prev { "< Prev " } else { "       " }.to_owned();
                 if self.has_next {
                     paging.push_str("Next >");
                 }
@@ -196,7 +198,8 @@ impl CandidateState {
             loop {
                 match buffer.set_lines(0..buffer.line_count()?, true, lines.clone()) {
                     Err(e)
-                        if e.to_string() == r#"Exception("Failed to save undo information")"# => {} // retry
+                        if e.to_string()
+                            == r#"Exception("Failed to save undo information")"# => {} // retry
                     _ => break,
                 }
             }
@@ -339,14 +342,15 @@ pub fn setup_candidate_receivers(
                                 return;
                             }
                             let mut key = String::new();
-                            let modifier_prefix = match Fcitx5KeyState::from_bits(args.states) {
-                                Some(Fcitx5KeyState::Ctrl) => "<C-",
-                                Some(Fcitx5KeyState::Alt) => "<M-",
-                                Some(Fcitx5KeyState::Shift) => "<S-",
-                                _ => {
-                                    "" // no modifier
-                                }
-                            };
+                            let modifier_prefix =
+                                match Fcitx5KeyState::from_bits(args.states) {
+                                    Some(Fcitx5KeyState::Ctrl) => "<C-",
+                                    Some(Fcitx5KeyState::Alt) => "<M-",
+                                    Some(Fcitx5KeyState::Shift) => "<S-",
+                                    _ => {
+                                        "" // no modifier
+                                    }
+                                };
                             key.push_str(&modifier_prefix);
                             key.push(args.sym as u8 as char);
                             oxi::schedule(move |_| {

@@ -195,7 +195,5 @@ pub fn setup_insert_char_pre(trigger: AsyncHandle) -> oxi::Result<()> {
     // Register the autocmd for InsertCharPre
     api::create_autocmd(["InsertCharPre"], &opts)?;
 
-    oxi::print!("InsertCharPre autocmd registered");
-
     Ok(())
 }

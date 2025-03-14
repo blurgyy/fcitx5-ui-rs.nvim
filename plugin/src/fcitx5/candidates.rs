@@ -351,7 +351,7 @@ pub fn setup_candidate_receivers(
                                         "" // no modifier
                                     }
                                 };
-                            key.push_str(&modifier_prefix);
+                            key.push_str(modifier_prefix);
                             key.push(args.sym as u8 as char);
                             oxi::schedule(move |_| {
                                 oxi::print!("There");

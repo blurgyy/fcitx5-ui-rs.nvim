@@ -62,7 +62,7 @@ fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
             let state_guard = state.lock().unwrap();
             let ctx = state_guard.ctx.as_ref().unwrap();
             let controller = state_guard.controller.as_ref().unwrap();
-            set_im_en(controller, ctx).map_err(|e| as_api_error(e))?;
+            set_im_en(controller, ctx).map_err(as_api_error)?;
             set_im_zh(controller, ctx).map_err(|e| as_api_error(e).into())
         }
         "<esc>" => {
@@ -72,8 +72,8 @@ fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
             candidate_guard.mark_for_skip_next(UpdateVariant::Insert);
             let ctx = state_guard.ctx.as_ref().unwrap();
             let controller = state_guard.controller.as_ref().unwrap();
-            set_im_en(controller, ctx).map_err(|e| as_api_error(e))?;
-            set_im_zh(controller, ctx).map_err(|e| as_api_error(e))?;
+            set_im_en(controller, ctx).map_err(as_api_error)?;
+            set_im_zh(controller, ctx).map_err(as_api_error)?;
             candidate_guard.mark_for_update();
             drop(candidate_guard);
             oxi::schedule(move |_| process_candidate_updates(candidate_state.clone()));

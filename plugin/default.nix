@@ -2,18 +2,20 @@
   version,
   rustPlatform,
 
+  clippy,
   pkg-config,
   dbus,
 }:
 
 rustPlatform.buildRustPackage {
-  pname = "fcitx5-ui-rs.nvim-lib";
+  pname = "fcitx5-ui-rs.nvim";
   inherit version;
   src = ./.;
 
   nativeBuildInputs = [
-    rustPlatform.bindgenHook
+    clippy
     pkg-config
+    rustPlatform.bindgenHook # solves: libclang.so not found
   ];
   buildInputs = [
     dbus.dev

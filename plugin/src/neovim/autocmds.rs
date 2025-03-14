@@ -173,9 +173,11 @@ pub fn setup_insert_char_pre(trigger: AsyncHandle) -> oxi::Result<()> {
             let state = fcitx5_dbus::utils::key_event::KeyState::NoState;
 
             // Process the key in Fcitx5
-            ctx_clone
-                .process_key_event(code, 0, state, false, 0)
-                .map_err(as_api_error)?;
+            if let Ok(accept) = ctx_clone.process_key_event(code, 0, state, false, 0) {
+                if accept {
+                    api::set_vvar("char", "")?;
+                }
+            }
 
             // After processing key:
             guard.mark_for_update(); // Mark that content needs updating

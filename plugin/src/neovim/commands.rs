@@ -272,17 +272,13 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
                 }
             }
             UpdateType::Hide => {
-                eprintln!("hiding: 1");
                 guard.is_visible = false;
-                eprintln!("hiding: 2");
                 if let Some(window) = guard.window_id.take() {
-                    eprintln!("hiding: 3");
                     if window.is_valid() {
-                        eprintln!("hiding: 4");
-                        match window.close(true) {
-                            Ok(_) => (),
+                        oxi::schedule(move |_| match window.close(true) {
+                            Ok(_) => {}
                             Err(e) => eprintln!("Error closing window: {}", e),
-                        }
+                        });
                     }
                 }
             }

@@ -151,11 +151,8 @@ pub fn setup_insert_char_pre(trigger: AsyncHandle) -> oxi::Result<()> {
             } else {
                 return Ok::<_, oxi::Error>(false);
             };
-            api::set_vvar("char", "")?;
             let char_arg = char_arg.as_str();
-            // println!("char: {}", char_arg);
-
-            api::echo(vec![(char_arg, None)], false, &EchoOpts::builder().build())?;
+            println!("char: {}", char_arg);
 
             if char_arg.is_empty() {
                 return Ok(false);
@@ -217,8 +214,29 @@ pub fn setup_special_character_hijacking_keymaps() -> oxi::Result<()> {
     let opts = SetKeymapOpts::builder().noremap(true).silent(true).build();
     buf.set_keymap(
         api::types::Mode::Insert,
-        "<bs>",
-        "<cmd>Fcitx5TryDeleteChar<cr>",
+        "<BS>",
+        "<Cmd>Fcitx5TryInsertBackSpace<CR>",
+        &opts,
+    )?;
+
+    buf.set_keymap(
+        api::types::Mode::Insert,
+        "<CR>",
+        "<Cmd>Fcitx5TryInsertCarriageReturn<CR>",
+        &opts,
+    )?;
+
+    buf.set_keymap(
+        api::types::Mode::Insert,
+        "<Del>",
+        "<Cmd>Fcitx5TryInsertDelete<CR>",
+        &opts,
+    )?;
+
+    buf.set_keymap(
+        api::types::Mode::Insert,
+        "<Esc>",
+        "<Cmd>Fcitx5TryInsertEscape<CR>",
         &opts,
     )?;
 

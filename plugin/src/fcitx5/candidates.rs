@@ -1,7 +1,9 @@
 //! Candidate selection and UI management
 
-use fcitx5_dbus::input_context::InputContextProxyBlocking;
 use fcitx5_dbus::zbus::Result;
+use fcitx5_dbus::{
+    input_context::InputContextProxyBlocking, utils::key_event::KeyState as Fcitx5KeyState,
+};
 use nvim_oxi::{
     self as oxi,
     api::{
@@ -32,6 +34,7 @@ pub enum UpdateType {
     Hide,
     Insert(String),
     UpdateContent,
+    SkipNext,
 }
 
 /// State for candidate selection UI
@@ -139,7 +142,7 @@ impl CandidateState {
             // Add preedit text at the top
             if !self.preedit_text.is_empty() {
                 lines.push(format!("Input: {}", self.preedit_text));
-                lines.push("".to_string()); // Empty line separator
+                lines.push("".to_string()); // Empty line as separator
             }
 
             // Add candidates with proper selection indicator
@@ -159,10 +162,7 @@ impl CandidateState {
             if self.has_prev || self.has_next {
                 lines.push("".to_string());
 
-                let mut paging = String::new();
-                if self.has_prev {
-                    paging.push_str("< Prev ");
-                }
+                let mut paging = if self.has_prev { "< Prev " } else { "       " }.to_owned();
                 if self.has_next {
                     paging.push_str("Next >");
                 }
@@ -174,7 +174,7 @@ impl CandidateState {
             loop {
                 match buffer.set_lines(0..buffer.line_count()?, true, lines.clone()) {
                     Err(e)
-                        if e.to_string() == r#"Exception("Failed to save undo information")"# => {}
+                        if e.to_string() == r#"Exception("Failed to save undo information")"# => {} // retry
                     _ => break,
                 }
             }
@@ -187,13 +187,11 @@ impl CandidateState {
     pub fn mark_for_show(&mut self) {
         if !self.candidates.is_empty() {
             self.update_queue.push_back(UpdateType::Show);
-            self.is_visible = true;
         }
     }
 
     pub fn mark_for_hide(&mut self) {
         self.update_queue.push_back(UpdateType::Hide);
-        self.is_visible = false;
     }
 
     pub fn mark_for_insert(&mut self, text: String) {
@@ -201,9 +199,11 @@ impl CandidateState {
     }
 
     pub fn mark_for_update(&mut self) {
-        if self.is_visible {
-            self.update_queue.push_back(UpdateType::UpdateContent);
-        }
+        self.update_queue.push_back(UpdateType::UpdateContent);
+    }
+
+    pub fn mark_for_skip_next(&mut self) {
+        self.update_queue.push_back(UpdateType::SkipNext)
     }
 
     pub fn pop_update(&mut self) -> Option<UpdateType> {
@@ -296,6 +296,47 @@ pub fn setup_candidate_receivers(
                                 }
                             }
                             let _ = trigger.send();
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to receive commit signals: {}", e);
+                }
+            }
+        }
+    });
+
+    std::thread::spawn({
+        let forward_ctx = ctx.clone();
+        move || {
+            eprintln!("forward thread spawn");
+            match forward_ctx.receive_forward_key() {
+                Ok(forward_signal) => {
+                    eprintln!("got ok forward signal iterator!");
+                    for signal in forward_signal {
+                        eprintln!("got forward signal: {:?}", signal);
+                        if let Ok(args) = signal.args() {
+                            eprintln!("forwarding key: {:?}", args);
+                            if args.is_release {
+                                return;
+                            }
+                            let mut key = String::new();
+                            let modifier_prefix = match Fcitx5KeyState::from_bits(args.states) {
+                                Some(Fcitx5KeyState::Ctrl) => "<C-",
+                                Some(Fcitx5KeyState::Alt) => "<M-",
+                                Some(Fcitx5KeyState::Shift) => "<S-",
+                                _ => {
+                                    ""
+                                    // return; // not handled
+                                }
+                            };
+                            key.push_str(&modifier_prefix);
+                            key.push(args.sym as u8 as char);
+                            eprintln!("passing key: '{}'", key);
+                            oxi::schedule(move |_| {
+                                oxi::print!("There");
+                                api::feedkeys(&key, api::types::Mode::Normal, true)
+                            });
                         }
                     }
                 }

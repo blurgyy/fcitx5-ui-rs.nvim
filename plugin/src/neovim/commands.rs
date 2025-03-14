@@ -12,7 +12,8 @@ use nvim_oxi::{
 use std::{io::Error as IoError, sync::Arc};
 use std::{io::ErrorKind, sync::Mutex};
 
-use crate::fcitx5::{candidates::UpdateType, connection::prepare};
+use fcitx5_dbus::utils::key_event::{KeyState as Fcitx5KeyState, KeyVal as Fcitx5KeyVal};
+
 use crate::plugin::get_state;
 use crate::utils::as_api_error;
 use crate::{fcitx5::candidates::CandidateState, neovim::autocmds::setup_autocommands};
@@ -23,32 +24,75 @@ use crate::{
     },
     plugin::get_candidate_state,
 };
+use crate::{
+    fcitx5::{candidates::UpdateType, connection::prepare},
+    plugin::Fcitx5Plugin,
+};
 
-fn simulate_backspace() -> oxi::Result<()> {
-    let mut buf = api::get_current_buf();
-    let win = api::get_current_win();
-    if let Ok((row_1b, col_0b)) = win.get_cursor() {
-        let row_0b = row_1b - 1;
-        if col_0b > 0 {
-            if let Some(line) = buf.get_lines(row_0b..=row_0b, true)?.next() {
-                // String::len() returns number of bytes, should calculate number of characters
-                let s = line.to_string();
-                let chars = s.chars();
-                let n_chars = chars.clone().count();
-                let new_line: String = chars.take(n_chars - 1).collect();
-                // replace whole line
-                buf.set_text(row_0b..row_0b, 0, col_0b, vec![new_line])?;
-            }
-        } else {
-            assert!(col_0b == 0);
-            if row_0b > 0 {
-                if let Some(line) = buf.get_lines(row_0b - 1..row_0b, true)?.next() {
-                    buf.set_text(row_0b - 1..row_0b, 0, 0, vec![line])?;
-                }
-            }
-        }
+fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
+    let state = get_state();
+    let state_guard = state.lock().unwrap();
+    let candidate_guard = state_guard.candidate_state.lock().unwrap();
+    if !candidate_guard.is_visible {
+        api::feedkeys(&the_char.to_string(), api::types::Mode::Normal, true);
+        return Ok(());
     }
-    Ok(())
+
+    drop(candidate_guard);
+    drop(state_guard);
+
+    match nvim_keycode.to_lowercase().as_str() {
+        "<bs>" => {
+            let state_guard = state.lock().unwrap();
+            let ctx = state_guard.ctx.as_ref().unwrap();
+            let key_code = Fcitx5KeyVal::DELETE;
+            let key_state = Fcitx5KeyState::NoState;
+            ctx.process_key_event(key_code, 0, key_state, false, 0)
+                .map_err(as_api_error)?;
+            let mut candidate_guard = state_guard.candidate_state.lock().unwrap();
+            candidate_guard.mark_for_update();
+            drop(candidate_guard);
+            drop(state_guard);
+            process_candidate_updates(get_candidate_state())?;
+            Ok::<_, oxi::Error>(())
+        }
+        "<cr>" => {
+            let state_guard = state.lock().unwrap();
+            let ctx = state_guard.ctx.as_ref().unwrap();
+            let controller = state_guard.controller.as_ref().unwrap();
+            set_im_en(controller, ctx).map_err(|e| as_api_error(e))?;
+            set_im_zh(controller, ctx).map_err(|e| as_api_error(e).into())
+        }
+        "<esc>" => {
+            let state_guard = state.lock().unwrap();
+            let candidate_state = state_guard.candidate_state.clone();
+            let mut candidate_guard = candidate_state.lock().unwrap();
+            candidate_guard.mark_for_skip_next();
+            let ctx = state_guard.ctx.as_ref().unwrap();
+            let controller = state_guard.controller.as_ref().unwrap();
+            set_im_en(controller, ctx).map_err(|e| as_api_error(e))?;
+            set_im_zh(controller, ctx).map_err(|e| as_api_error(e))?;
+            candidate_guard.mark_for_update();
+            drop(candidate_guard);
+            oxi::schedule(move |_| process_candidate_updates(candidate_state.clone()));
+            Ok(())
+        }
+        _ => Ok::<_, oxi::Error>(()),
+    }
+
+    // let fcitx5_key_code = match nvim_keycode.to_lowercase().as_str() {
+    //     "<bs>" => fcitx5_dbus::utils::key_event::KeyVal::DELETE,
+    //     _ => fcitx5_dbus::utils::key_event::KeyVal::from_char(the_char),
+    // };
+    // let fcitx5_key_state = fcitx5_dbus::utils::key_event::KeyState::NoState;
+    // let accept = ctx
+    //     .process_key_event(fcitx5_key_code, 0, fcitx5_key_state, false, 0)
+    //     .map_err(as_api_error)?;
+    // candidate_guard.mark_for_update();
+    // drop(candidate_guard);
+    // drop(state_guard);
+    // process_candidate_updates(get_candidate_state())?;
+    // Ok::<_, oxi::Error>(())
 }
 
 /// Register all plugin commands
@@ -58,13 +102,13 @@ pub fn register_commands() -> oxi::Result<()> {
     // Define user commands
     api::create_user_command(
         "Fcitx5Initialize",
-        |_| initialize_fcitx5(),
+        |_| initialize_fcitx5(get_state()),
         &CreateCommandOpts::default(),
     )?;
 
     api::create_user_command(
         "Fcitx5Reset",
-        |_| reset_fcitx5(),
+        |_| reset_fcitx5(get_state()),
         &CreateCommandOpts::default(),
     )?;
 
@@ -148,34 +192,38 @@ pub fn register_commands() -> oxi::Result<()> {
     )?;
 
     api::create_user_command(
-        "Fcitx5TryDeleteChar",
-        {
-            let state = state.clone();
-            move |_| {
-                let state_guard = state.lock().unwrap();
-                if !state_guard.initialized {
-                    // eprintln!("passing through");
-                    oxi::schedule(move |_| simulate_backspace());
-                    return Ok::<_, oxi::Error>(());
-                }
-                let mut candidate_guard = state_guard.candidate_state.lock().unwrap();
-                if !candidate_guard.is_visible {
-                    oxi::schedule(move |_| simulate_backspace());
-                    return Ok::<_, oxi::Error>(());
-                }
-                let ctx = state_guard.ctx.as_ref().unwrap();
-                let fcitx5_key_code = fcitx5_dbus::utils::key_event::KeyVal::DELETE;
-                let fcitx5_key_state = fcitx5_dbus::utils::key_event::KeyState::NoState;
-                ctx.process_key_event(fcitx5_key_code, 0, fcitx5_key_state, false, 0)
-                    .map_err(as_api_error)?;
-                candidate_guard.mark_for_update();
-                drop(candidate_guard);
-                oxi::schedule(move |_| {
-                    let _ = process_candidate_updates(get_candidate_state());
-                });
-                Ok(())
-            }
-        },
+        "Fcitx5TryInsertTab",
+        move |_| handle_special_key("<Tab>", '\t'),
+        &CreateCommandOpts::default(),
+    )?;
+
+    api::create_user_command(
+        "Fcitx5TryInsertBackSpace",
+        move |_| handle_special_key("<BS>", '\x08'),
+        &CreateCommandOpts::default(),
+    )?;
+
+    api::create_user_command(
+        "Fcitx5TryInsertCarriageReturn",
+        move |_| handle_special_key("<CR>", '\n'),
+        &CreateCommandOpts::default(),
+    )?;
+
+    api::create_user_command(
+        "Fcitx5TryInsertSpace",
+        move |_| handle_special_key("<Space>", ' '),
+        &CreateCommandOpts::default(),
+    )?;
+
+    api::create_user_command(
+        "Fcitx5TryInsertDelete",
+        move |_| handle_special_key("<Del>", '\x7f'),
+        &CreateCommandOpts::default(),
+    )?;
+
+    api::create_user_command(
+        "Fcitx5TryInsertEscape",
+        move |_| handle_special_key("<Esc>", '\x1b'),
         &CreateCommandOpts::default(),
     )?;
 
@@ -187,13 +235,17 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
     // Get the state and check for pending updates
     let mut guard = candidate_state.lock().unwrap();
     // Process any pending updates
+    let mut should_skip = false;
     while let Some(update_type) = guard.pop_update() {
+        if should_skip {
+            continue;
+        }
         match update_type {
             UpdateType::Show => {
+                guard.is_visible = true;
                 guard.setup_window()?;
                 guard.update_display()?;
 
-                // Show the window (this is now safe to call)
                 if let Some(window) = &guard.window_id {
                     if !window.is_valid() {
                         // Window was invalidated, recreate it
@@ -203,6 +255,7 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
                 }
             }
             UpdateType::Hide => {
+                guard.is_visible = false;
                 if let Some(window) = guard.window_id.take() {
                     if window.is_valid() {
                         match window.close(true) {
@@ -211,7 +264,6 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
                         }
                     }
                 }
-                guard.is_visible = false;
             }
             UpdateType::UpdateContent => {
                 guard.update_display()?;
@@ -237,6 +289,7 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
                     }
                 });
             }
+            UpdateType::SkipNext => should_skip = true,
         }
     }
 
@@ -244,8 +297,7 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
 }
 
 /// Initialize the connection and input context
-pub fn initialize_fcitx5() -> oxi::Result<()> {
-    let state = get_state();
+pub fn initialize_fcitx5(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
     if state_guard.initialized {
@@ -290,8 +342,7 @@ pub fn initialize_fcitx5() -> oxi::Result<()> {
 }
 
 /// Reset the plugin completely - close connections and clean up state
-pub fn reset_fcitx5() -> oxi::Result<()> {
-    let state = get_state();
+pub fn reset_fcitx5(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
     if !state_guard.initialized && state_guard.controller.is_none() {

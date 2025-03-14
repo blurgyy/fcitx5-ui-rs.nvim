@@ -234,26 +234,24 @@ pub fn register_commands() -> oxi::Result<()> {
 pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) -> oxi::Result<()> {
     // Get the state and check for pending updates
     let mut guard = candidate_state.lock().unwrap();
-    // Process any pending updates
-    let mut skip_next = None;
     while let Some(update_type) = guard.pop_update() {
-        match skip_next {
+        match guard.skip_next {
             Some(UpdateVariant::Show) if matches!(update_type, UpdateType::Show) => {
-                skip_next.take();
+                guard.skip_next.take();
                 continue;
             }
             Some(UpdateVariant::Insert) if matches!(update_type, UpdateType::Insert(_)) => {
-                skip_next.take();
+                guard.skip_next.take();
                 continue;
             }
             Some(UpdateVariant::UpdateContent)
                 if matches!(update_type, UpdateType::UpdateContent) =>
             {
-                skip_next.take();
+                guard.skip_next.take();
                 continue;
             }
             Some(UpdateVariant::Hide) if matches!(update_type, UpdateType::Hide) => {
-                skip_next.take();
+                guard.skip_next.take();
                 continue;
             }
             _ => {}
@@ -312,7 +310,6 @@ pub fn process_candidate_updates(candidate_state: Arc<Mutex<CandidateState>>) ->
                     }
                 });
             }
-            UpdateType::SkipNext(variant) => skip_next = Some(variant),
         }
     }
 

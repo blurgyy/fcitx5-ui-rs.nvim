@@ -42,7 +42,6 @@ pub enum UpdateType {
     Hide,
     Insert(String),
     UpdateContent,
-    SkipNext(UpdateVariant),
 }
 
 /// State for candidate selection UI
@@ -66,6 +65,8 @@ pub struct CandidateState {
     pub is_visible: bool,
     /// Whether the window should be updated
     pub update_queue: VecDeque<UpdateType>,
+    /// If [`Some`], skip next event whose type matches this variant
+    pub skip_next: Option<UpdateVariant>,
 }
 
 impl CandidateState {
@@ -80,6 +81,7 @@ impl CandidateState {
             has_next: false,
             is_visible: false,
             update_queue: VecDeque::new(),
+            skip_next: None,
         }
     }
 
@@ -211,7 +213,7 @@ impl CandidateState {
     }
 
     pub fn mark_for_skip_next(&mut self, variant: UpdateVariant) {
-        self.update_queue.push_back(UpdateType::SkipNext(variant))
+        self.skip_next = Some(variant);
     }
 
     pub fn pop_update(&mut self) -> Option<UpdateType> {

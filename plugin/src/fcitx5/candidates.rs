@@ -169,6 +169,9 @@ impl CandidateState {
             self.buffer_id = Some(api::create_buf(false, true)?);
         }
 
+        // Calculate both width and height for initial setup
+        let (width, height) = self.calculate_window_dimensions();
+
         // Make sure the buffer exists
         let buffer = self.buffer_id.as_ref().unwrap().clone();
 
@@ -181,13 +184,11 @@ impl CandidateState {
                 .relative(WindowRelativeTo::Cursor)
                 .row(1)
                 .col(0)
-                .width(30)
-                .height(10)
+                .width(width)
+                .height(height)
                 .focusable(false)
                 .border(WindowBorder::Rounded)
-                .title(WindowTitle::SimpleString(
-                    " Fcitx5 ".to_owned().into(), // More compact title
-                ))
+                .title(WindowTitle::SimpleString(" Fcitx5 ".to_owned().into()))
                 .title_pos(WindowTitlePosition::Center)
                 .style(WindowStyle::Minimal)
                 .build();
@@ -223,13 +224,16 @@ impl CandidateState {
 
         let buffer = self.buffer_id.as_ref().unwrap().clone();
 
+        // Calculate dimensions
+        let (width, height) = self.calculate_window_dimensions();
+
         // Generate content for the candidate window
         let mut lines = Vec::new();
 
         // Add preedit text at the top with better formatting
         if !self.preedit_text.is_empty() {
             lines.push(format!("   {}", self.preedit_text));
-            lines.push("─".repeat(30)); // Fixed width separator
+            lines.push("─".repeat(width as usize));
         }
 
         // Add candidates with improved formatting
@@ -247,19 +251,31 @@ impl CandidateState {
 
         // Add paging info at the bottom with better styling
         if self.has_prev || self.has_next {
-            lines.push("─".repeat(30)); // Fixed width separator
+            lines.push("─".repeat(width as usize));
 
             let prev_part = if self.has_prev { "◄ Prev" } else { "      " };
             let next_part = if self.has_next { "Next ►" } else { "      " };
 
-            // Simple line with fixed spacing
-            lines.push(format!("{}          {}", prev_part, next_part));
+            let prev_width = UnicodeWidthStr::width(prev_part);
+            let next_width = UnicodeWidthStr::width(next_part);
+
+            let total_width = width as usize;
+
+            let mut paging_line = String::with_capacity(total_width);
+            paging_line.push_str(prev_part);
+
+            let spaces_needed = total_width.saturating_sub(prev_width + next_width);
+            paging_line.push_str(&" ".repeat(spaces_needed));
+            paging_line.push_str(next_part);
+
+            lines.push(paging_line);
         }
 
-        // Update buffer content on main thread without any window resizing
+        // First schedule the buffer update
+        let lines_clone = lines.clone();
         oxi::schedule({
-            let mut buffer = buffer;
-            let lines = lines;
+            let mut buffer = buffer.clone();
+            let lines = lines_clone;
             move |_| {
                 if !buffer.is_valid() {
                     return;
@@ -270,6 +286,32 @@ impl CandidateState {
                         let _ = buffer.set_lines(0..line_count, true, lines);
                     }
                     Err(_) => {}
+                }
+            }
+        });
+
+        // Schedule window resizing without complex hysteresis
+        oxi::schedule({
+            let width = width;
+            let height = height;
+            move |_| {
+                // Small delay to ensure buffer update completes first
+                std::thread::sleep(std::time::Duration::from_millis(5));
+
+                // Get candidate window
+                if let Ok(mut guard) = get_candidate_window().lock() {
+                    if let Some(window) = guard.as_mut() {
+                        if window.is_valid() {
+                            // Create config with new dimensions
+                            let config = WindowConfig::builder()
+                                .width(width)
+                                .height(height)
+                                .build();
+
+                            // Apply new dimensions
+                            let _ = window.set_config(&config);
+                        }
+                    }
                 }
             }
         });

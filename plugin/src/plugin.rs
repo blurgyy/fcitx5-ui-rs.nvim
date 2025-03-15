@@ -16,8 +16,8 @@ pub struct Fcitx5Plugin {
     pub augroup_id: Option<u32>,
     pub candidate_state: Arc<Mutex<CandidateState>>,
     pub candidate_window: Arc<Mutex<Option<nvim_oxi::api::Window>>>,
-    pub im_activated: Option<String>,
-    pub im_deactivated: Option<String>,
+    pub im_active: Option<String>,
+    pub im_inactive: Option<String>,
 }
 
 impl Fcitx5Plugin {
@@ -28,8 +28,8 @@ impl Fcitx5Plugin {
             augroup_id: None,
             candidate_state: Arc::new(Mutex::new(CandidateState::new())),
             candidate_window: Arc::new(Mutex::new(None)),
-            im_activated: None,
-            im_deactivated: None,
+            im_active: None,
+            im_inactive: None,
         }
     }
 
@@ -73,7 +73,7 @@ impl Fcitx5Plugin {
         if let (Some(controller), Some(ctx), Some(im_activated)) = (
             self.controller.as_ref(),
             self.ctx.as_ref(),
-            self.im_activated.as_ref(),
+            self.im_active.as_ref(),
         ) {
             ctx.focus_in()?;
             if controller.current_input_method()? != *im_activated {
@@ -87,7 +87,7 @@ impl Fcitx5Plugin {
         if let (Some(controller), Some(ctx), Some(im_deactivated)) = (
             self.controller.as_ref(),
             self.ctx.as_ref(),
-            self.im_deactivated.as_ref(),
+            self.im_inactive.as_ref(),
         ) {
             ctx.focus_in()?;
             if controller.current_input_method()? != *im_deactivated {

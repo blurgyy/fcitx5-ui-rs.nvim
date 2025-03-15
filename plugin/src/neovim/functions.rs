@@ -71,8 +71,8 @@ pub fn setup(config: PluginConfig) -> bool {
     // set config into plugin state
     let state = get_state();
     let mut state_guard = state.lock().unwrap();
-    state_guard.im_activated = config.im_activated;
-    state_guard.im_deactivated = config.im_deactivated;
+    state_guard.im_active = config.im_activated;
+    state_guard.im_inactive = config.im_deactivated;
     // drop to not block
     drop(state_guard);
 

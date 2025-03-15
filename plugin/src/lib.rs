@@ -3,6 +3,8 @@
 //! This plugin provides automatic switching between input methods
 //! based on Neovim editor modes.
 
+#[macro_use]
+
 mod fcitx5;
 mod neovim;
 mod plugin;

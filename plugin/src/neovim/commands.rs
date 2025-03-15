@@ -14,7 +14,8 @@ use fcitx5_dbus::utils::key_event::{
 };
 
 use crate::{
-    fcitx5::candidates::setup_candidate_receivers, plugin::get_candidate_state,
+    fcitx5::candidates::setup_candidate_receivers, ignore_dbus_no_interface_error,
+    plugin::get_candidate_state,
 };
 use crate::{
     fcitx5::candidates::CandidateState, neovim::autocmds::register_autocommands,
@@ -61,10 +62,9 @@ fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
         "<cr>" => {
             let state_guard = state.lock().unwrap();
             // deactivating followed by activating will commit the preedit string
-            state_guard.deactivate_im().map_err(as_api_error)?;
-            state_guard
-                .activate_im()
-                .map_err(|e| as_api_error(e).into())
+            ignore_dbus_no_interface_error!(state_guard.deactivate_im());
+            ignore_dbus_no_interface_error!(state_guard.activate_im());
+            Ok(())
         }
         "<esc>" => {
             let state_guard = state.lock().unwrap();
@@ -74,8 +74,8 @@ fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
             candidate_guard.mark_for_skip_next(UpdateVariant::Insert);
             // deactivating followed by activating will commit the preedit string, but we have
             // skip the next commit update (see above)
-            state_guard.deactivate_im().map_err(as_api_error)?;
-            state_guard.activate_im().map_err(as_api_error)?;
+            ignore_dbus_no_interface_error!(state_guard.deactivate_im());
+            ignore_dbus_no_interface_error!(state_guard.activate_im());
             candidate_guard.mark_for_update();
             drop(candidate_guard);
             oxi::schedule(move |_| process_candidate_updates(candidate_state.clone()));
@@ -152,7 +152,7 @@ pub fn register_commands() -> oxi::Result<()> {
                     )));
                 }
 
-                state_guard.toggle_im().map_err(as_api_error)?;
+                ignore_dbus_no_interface_error!(state_guard.toggle_im());
 
                 oxi::print!("{}", state_guard.get_im().map_err(as_api_error)?);
 
@@ -177,7 +177,8 @@ pub fn register_commands() -> oxi::Result<()> {
                     )));
                 }
 
-                state_guard.activate_im().map_err(as_api_error)
+                ignore_dbus_no_interface_error!(state_guard.activate_im());
+                Ok(())
             }
         },
         &CreateCommandOpts::default(),
@@ -196,7 +197,8 @@ pub fn register_commands() -> oxi::Result<()> {
                     )));
                 }
 
-                state_guard.deactivate_im().map_err(as_api_error)
+                ignore_dbus_no_interface_error!(state_guard.deactivate_im());
+                Ok(())
             }
         },
         &CreateCommandOpts::default(),
@@ -320,7 +322,7 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     // Store in state
     state_guard.controller = Some(controller.clone());
     state_guard.ctx = Some(ctx.clone());
-    state_guard.deactivate_im().map_err(as_api_error)?;
+    ignore_dbus_no_interface_error!(state_guard.deactivate_im());
 
     let trigger =
         AsyncHandle::new(move || process_candidate_updates(get_candidate_state()))?;
@@ -332,7 +334,7 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     // if already in insert mode, set the im
     if let Ok(got_mode) = api::get_mode() {
         if got_mode.mode == api::types::Mode::Insert {
-            state_guard.activate_im().map_err(as_api_error)?;
+            ignore_dbus_no_interface_error!(state_guard.activate_im());
         }
     }
 
@@ -357,7 +359,7 @@ pub fn unload_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     }
 
     // Reset and clear the input context if it exists
-    state_guard.reset_im_ctx()?;
+    ignore_dbus_no_interface_error!(state_guard.reset_im_ctx());
 
     // Clear state
     state_guard.controller = None;

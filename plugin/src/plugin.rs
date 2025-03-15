@@ -37,15 +37,11 @@ impl Fcitx5Plugin {
         self.controller.is_some() && self.ctx.is_some()
     }
 
-    pub fn reset_im_ctx(&self) -> oxi::Result<()> {
+    pub fn reset_im_ctx(&self) -> Result<()> {
         if let Some(ctx) = self.ctx.as_ref() {
-            ctx.reset().map_err(|e| as_api_error(e).into())
-        } else {
-            Err(oxi::api::Error::Other(format!(
-                "{PLUGIN_NAME}: could not reset input method context (not initialized)"
-            ))
-            .into())
+            ctx.reset()?;
         }
+        Ok(())
     }
 
     pub fn get_im(&self) -> oxi::Result<String> {

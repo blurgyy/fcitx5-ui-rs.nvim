@@ -11,9 +11,9 @@ use nvim_oxi::{
     Error as OxiError,
 };
 
-use crate::plugin::get_candidate_state;
 use crate::plugin::{get_state, Fcitx5Plugin};
 use crate::utils::as_api_error;
+use crate::{ignore_dbus_no_interface_error, plugin::get_candidate_state};
 use std::sync::{Arc, Mutex};
 
 /// Setup autocommands for input method switching
@@ -52,7 +52,7 @@ pub fn register_autocommands(
                 if !state_guard.initialized() {
                     return Ok(false);
                 }
-                state_guard.activate_im().map_err(as_api_error)?;
+                ignore_dbus_no_interface_error!(state_guard.activate_im());
                 Ok::<_, OxiError>(false) // NB: return false to keep this autocmd
             }
         })
@@ -70,7 +70,7 @@ pub fn register_autocommands(
                 if !state_guard.initialized() {
                     return Ok(false);
                 }
-                state_guard.deactivate_im().map_err(as_api_error)?;
+                ignore_dbus_no_interface_error!(state_guard.deactivate_im());
                 Ok::<_, OxiError>(false) // NB: return false to keep this autocmd
             }
         })

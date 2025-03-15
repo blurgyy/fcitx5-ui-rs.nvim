@@ -29,6 +29,8 @@ impl Fcitx5Plugin {
     }
 }
 
+pub static PLUGIN_NAME: &'static str = "fcitx5-ui-rs.nvim";
+
 // Use lazy_static for thread-safe initialization
 lazy_static::lazy_static! {
     static ref PLUGIN_STATE: Arc<Mutex<Fcitx5Plugin>> = Arc::new(Mutex::new(Fcitx5Plugin::new()));

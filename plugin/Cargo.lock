@@ -292,6 +292,7 @@ dependencies = [
  "fcitx5-dbus",
  "lazy_static",
  "nvim-oxi",
+ "serde",
 ]
 
 [[package]]

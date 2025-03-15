@@ -8,12 +8,9 @@ mod neovim;
 mod plugin;
 mod utils;
 
-use nvim_oxi::{self as oxi};
+use nvim_oxi::{self as oxi, Dictionary, Function};
 
 #[oxi::plugin]
-fn fcitx5_ui_rs() -> oxi::Result<()> {
-    // Initialize the plugin's commands
-    neovim::commands::register_commands()?;
-
-    Ok(())
+fn fcitx5_ui_rs() -> oxi::Dictionary {
+    Dictionary::from_iter([("setup", Function::from_fn(neovim::functions::setup))])
 }

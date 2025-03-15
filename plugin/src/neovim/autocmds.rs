@@ -26,7 +26,7 @@ pub fn register_autocommands(
 ) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
-    // If already initialized, clean up first
+    // If already registered, clean up first
     if let Some(augroup_id) = state_guard.augroup_id {
         api::del_augroup_by_id(augroup_id)?;
     }

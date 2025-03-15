@@ -107,20 +107,36 @@ pub fn register_commands() -> oxi::Result<()> {
 
     // Define user commands
     api::create_user_command(
-        "Fcitx5Initialize",
-        |_| initialize_plugin(get_state()),
+        "Fcitx5PluginLoad",
+        move |_| load_plugin(get_state()),
         &CreateCommandOpts::default(),
     )?;
 
     api::create_user_command(
-        "Fcitx5Reset",
-        |_| reset_plugin(get_state()),
+        "Fcitx5PluginUnload",
+        move |_| unload_plugin(get_state()),
+        &CreateCommandOpts::default(),
+    )?;
+
+    api::create_user_command(
+        "Fcitx5PluginToggle",
+        move |_| {
+            let state = get_state();
+            let state_guard = state.lock().unwrap();
+            if state_guard.initialized {
+                drop(state_guard);
+                unload_plugin(get_state())
+            } else {
+                drop(state_guard);
+                load_plugin(get_state())
+            }
+        },
         &CreateCommandOpts::default(),
     )?;
 
     // These commands will check if initialized before proceeding
     api::create_user_command(
-        "Fcitx5Toggle",
+        "Fcitx5IMToggle",
         {
             let state = state.clone();
             move |_| {
@@ -128,7 +144,7 @@ pub fn register_commands() -> oxi::Result<()> {
                 if !state_guard.initialized {
                     return Err(as_api_error(IoError::new(
                         ErrorKind::Other,
-                        "Fcitx5 plugin not initialized. Run :Fcitx5Initialize first",
+                        "Fcitx5 plugin not loaded. Run :Fcitx5PluginLoad first",
                     )));
                 }
 
@@ -149,7 +165,7 @@ pub fn register_commands() -> oxi::Result<()> {
     )?;
 
     api::create_user_command(
-        "Fcitx5Pinyin",
+        "Fcitx5IMPinyin",
         {
             let state = state.clone();
             move |_| {
@@ -157,7 +173,7 @@ pub fn register_commands() -> oxi::Result<()> {
                 if !state_guard.initialized {
                     return Err(as_api_error(IoError::new(
                         ErrorKind::Other,
-                        "Fcitx5 plugin not initialized. Run :Fcitx5Initialize first",
+                        "Fcitx5 plugin not loaded. Run :Fcitx5PluginLoad first",
                     )));
                 }
 
@@ -171,7 +187,7 @@ pub fn register_commands() -> oxi::Result<()> {
     )?;
 
     api::create_user_command(
-        "Fcitx5English",
+        "Fcitx5IMEnglish",
         {
             let state = state.clone();
             move |_| {
@@ -179,7 +195,7 @@ pub fn register_commands() -> oxi::Result<()> {
                 if !state_guard.initialized {
                     return Err(as_api_error(IoError::new(
                         ErrorKind::Other,
-                        "Fcitx5 plugin not initialized. Run :Fcitx5Initialize first",
+                        "Fcitx5 plugin not loaded. Run :Fcitx5PluginLoad first",
                     )));
                 }
 
@@ -193,12 +209,6 @@ pub fn register_commands() -> oxi::Result<()> {
     )?;
 
     api::create_user_command(
-        "Fcitx5TryInsertTab",
-        move |_| handle_special_key("<Tab>", '\t'),
-        &CreateCommandOpts::default(),
-    )?;
-
-    api::create_user_command(
         "Fcitx5TryInsertBackSpace",
         move |_| handle_special_key("<BS>", '\x08'),
         &CreateCommandOpts::default(),
@@ -207,12 +217,6 @@ pub fn register_commands() -> oxi::Result<()> {
     api::create_user_command(
         "Fcitx5TryInsertCarriageReturn",
         move |_| handle_special_key("<CR>", '\n'),
-        &CreateCommandOpts::default(),
-    )?;
-
-    api::create_user_command(
-        "Fcitx5TryInsertSpace",
-        move |_| handle_special_key("<Space>", ' '),
         &CreateCommandOpts::default(),
     )?;
 
@@ -305,11 +309,11 @@ pub fn process_candidate_updates(
 }
 
 /// Initialize the connection and input context
-pub fn initialize_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
+pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
     if state_guard.initialized {
-        oxi::print!("Fcitx5 plugin already initialized");
+        oxi::print!("Fcitx5 plugin already loaded");
         return Ok(());
     }
 
@@ -320,11 +324,10 @@ pub fn initialize_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     let candidate_state = state_guard.candidate_state.clone();
 
     // Store in state
-    state_guard.controller = Some(controller);
+    state_guard.controller = Some(controller.clone());
     state_guard.ctx = Some(ctx.clone());
     state_guard.initialized = true;
 
-    // Spawn a thread for updating the candidate window
     let trigger =
         AsyncHandle::new(move || process_candidate_updates(get_candidate_state()))?;
 
@@ -340,15 +343,22 @@ pub fn initialize_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
 
     register_keymaps(state.clone())?;
 
+    // if already in insert mode, set the im
+    if let Ok(got_mode) = api::get_mode() {
+        if got_mode.mode == api::types::Mode::Insert {
+            set_im_zh(&controller, &ctx).map_err(as_api_error)?;
+        }
+    }
+
     Ok(())
 }
 
 /// Reset the plugin completely - close connections and clean up state
-pub fn reset_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
+pub fn unload_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
     if !state_guard.initialized && state_guard.controller.is_none() {
-        oxi::print!("Fcitx5 plugin already reset");
+        oxi::print!("Fcitx5 plugin already unloaded");
         return Ok(());
     }
 

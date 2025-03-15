@@ -1,4 +1,5 @@
 {
+  lib,
   version,
   rustPlatform,
 
@@ -26,4 +27,10 @@ rustPlatform.buildRustPackage {
   '';
 
   cargoLock.lockFile = ./Cargo.lock;
+
+  meta = {
+    description = "Fcitx5 integration for Neovim";
+    license = lib.licenses.gpl3;
+    homepage = "https://github.com/blurgyy/fcitx5-ui-rs.nvim";
+  };
 }

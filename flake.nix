@@ -1,5 +1,5 @@
 {
-  description = "Rust port of https://github.com/black-desk/fcitx5-ui.nvim";
+  description = "Fcitx5 integration for Neovim";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";

@@ -75,17 +75,8 @@ fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
         }
         "<esc>" => {
             let state_guard = state.lock().unwrap();
-            let candidate_state = state_guard.candidate_state.clone();
-            let mut candidate_guard = candidate_state.lock().unwrap();
-            // brace for the next preedit string commit update
-            candidate_guard.mark_for_skip_next(UpdateVariant::Insert);
-            // deactivating followed by activating will commit the preedit string, but we have
-            // skip the next commit update (see above)
-            ignore_dbus_no_interface_error!(state_guard.deactivate_im());
-            ignore_dbus_no_interface_error!(state_guard.activate_im());
-            candidate_guard.mark_for_update();
-            drop(candidate_guard);
-            oxi::schedule(move |_| process_candidate_updates(candidate_state.clone()));
+            ignore_dbus_no_interface_error!(state_guard.reset_im_ctx());
+            oxi::schedule(move |_| process_candidate_updates(get_candidate_state()));
             Ok(())
         }
         _ => Ok::<_, oxi::Error>(()),

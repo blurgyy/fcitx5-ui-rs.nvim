@@ -7,29 +7,28 @@ use nvim_oxi as oxi;
 use std::sync::{Arc, Mutex};
 
 use crate::fcitx5::candidates::CandidateState;
+use crate::neovim::functions::PluginConfig;
 use crate::utils::as_api_error;
 
 // Structure to hold the plugin state
 pub struct Fcitx5Plugin {
+    pub config: Option<PluginConfig>,
     pub controller: Option<ControllerProxyBlocking<'static>>,
     pub ctx: Option<InputContextProxyBlocking<'static>>,
     pub augroup_id: Option<u32>,
     pub candidate_state: Arc<Mutex<CandidateState>>,
     pub candidate_window: Arc<Mutex<Option<nvim_oxi::api::Window>>>,
-    pub im_active: Option<String>,
-    pub im_inactive: Option<String>,
 }
 
 impl Fcitx5Plugin {
     pub fn new() -> Self {
         Self {
+            config: None,
             controller: None,
             ctx: None,
             augroup_id: None,
             candidate_state: Arc::new(Mutex::new(CandidateState::new())),
             candidate_window: Arc::new(Mutex::new(None)),
-            im_active: None,
-            im_inactive: None,
         }
     }
 
@@ -70,13 +69,13 @@ impl Fcitx5Plugin {
     }
 
     pub fn activate_im(&self) -> Result<()> {
-        if let (Some(controller), Some(ctx), Some(im_active)) = (
+        if let (Some(controller), Some(ctx), Some(config)) = (
             self.controller.as_ref(),
             self.ctx.as_ref(),
-            self.im_active.as_ref(),
+            self.config.as_ref(),
         ) {
             ctx.focus_in()?;
-            if controller.current_input_method()? != *im_active {
+            if controller.current_input_method()? != *config.im_active {
                 controller.toggle()?;
             }
         }
@@ -84,13 +83,13 @@ impl Fcitx5Plugin {
     }
 
     pub fn deactivate_im(&self) -> Result<()> {
-        if let (Some(controller), Some(ctx), Some(im_inactive)) = (
+        if let (Some(controller), Some(ctx), Some(config)) = (
             self.controller.as_ref(),
             self.ctx.as_ref(),
-            self.im_inactive.as_ref(),
+            self.config.as_ref(),
         ) {
             ctx.focus_in()?;
-            if controller.current_input_method()? != *im_inactive {
+            if controller.current_input_method()? != *config.im_inactive {
                 controller.toggle()?;
             }
         }

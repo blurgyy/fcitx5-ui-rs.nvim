@@ -114,3 +114,14 @@ pub fn setup(config: PluginConfig) -> bool {
 
     true
 }
+
+// must accept 1 parameter, use `()` to let the exported lua function take no parameter
+pub fn get_im(_: ()) -> oxi::String {
+    let state = get_state();
+    let state_guard = state.lock().unwrap();
+    if let Ok(im) = state_guard.get_im() {
+        im.into()
+    } else {
+        "".into()
+    }
+}

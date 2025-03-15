@@ -28,6 +28,12 @@ rustPlatform.buildRustPackage {
 
   cargoLock.lockFile = ./Cargo.lock;
 
+  postInstall = ''
+    mkdir $out/lua -p
+    mv $out/lib/libfcitx5_ui_rs.so $out/lua/fcitx5_ui_rs.so
+    rm -rv $out/lib
+  '';
+
   meta = {
     description = "Fcitx5 integration for Neovim";
     license = lib.licenses.gpl3;

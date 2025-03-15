@@ -23,8 +23,8 @@
       in
       {
         packages = {
-          inherit (pkgs) fcitx5-ui-rs-nvim;
-          default = pkgs.fcitx5-ui-rs-nvim;
+          inherit (pkgs.vimPlugins) fcitx5-ui-rs-nvim;
+          default = pkgs.vimPlugins.fcitx5-ui-rs-nvim;
         };
       }
     )
@@ -32,11 +32,15 @@
       overlays.default =
         final: prev:
         let
-          version = "0.1.0";
+          mtime = self.lastModifiedDate;
+          date = "${builtins.substring 0 4 mtime}-${builtins.substring 4 2 mtime}-${builtins.substring 6 2 mtime}";
+          version = date;
         in
         {
-          fcitx5-ui-rs-nvim = final.callPackage ./plugin {
-            inherit version;
+          vimPlugins = prev.vimPlugins // {
+            fcitx5-ui-rs-nvim = final.callPackage ./plugin {
+              inherit version;
+            };
           };
         };
       hydraJobs = self.packages;

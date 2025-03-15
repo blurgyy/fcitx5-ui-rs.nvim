@@ -101,13 +101,13 @@ impl CandidateState {
             let max_candidate_len = self
                 .candidates
                 .iter()
-                .map(|c| c.display.len() + c.text.len() + 5) // +5 for spacing and indicators
+                .map(|c| c.display.len() + c.text.len() + 3) // +3 for marker and space
                 .max()
                 .unwrap_or(20);
 
             // Find longest preedit text
             let preedit_len = if !self.preedit_text.is_empty() {
-                self.preedit_text.len() + 7 // "Input: " prefix
+                self.preedit_text.len() + 4 // "⌨  " prefix
             } else {
                 0
             };
@@ -135,26 +135,31 @@ impl CandidateState {
         if self.buffer_id.is_none() {
             // Create a new scratch buffer for candidates
             self.buffer_id = Some(api::create_buf(false, true)?);
+
+            // Set buffer options for better appearance
+            if let Some(buf) = self.buffer_id.as_mut() {
+                let _ = buf.set_option("bufhidden", "hide");
+                let _ = buf.set_option("filetype", "fcitx5candidates");
+            }
         }
 
-        // Make sure the buffer exists
-        let mut buffer = self.buffer_id.as_ref().unwrap().clone();
-
-        // Set buffer options for better appearance
-        buffer.set_option("bufhidden", "hide")?;
-        buffer.set_option("filetype", "fcitx5candidates")?;
-
-        // Calculate optimal window dimensions based on content
+        // Calculate window dimensions once
         let (width, height) = self.calculate_window_dimensions();
 
         // Create the floating window for candidates if needed
         let candidate_window = get_candidate_window();
-        let candidate_window_guard = candidate_window.lock().unwrap();
-        if candidate_window_guard.is_none() {
+        let window_guard = candidate_window.lock().unwrap();
+        if window_guard.is_none() {
+            // Get buffer reference - avoid cloning repeatedly
+            let buffer = match &self.buffer_id {
+                Some(b) => b,
+                None => return Ok(()),
+            };
+
             // Create window options with improved appearance
             let opts = WindowConfig::builder()
                 .relative(WindowRelativeTo::Cursor)
-                .row(1) // Position just below cursor
+                .row(1)
                 .col(0)
                 .width(width)
                 .height(height)
@@ -168,36 +173,54 @@ impl CandidateState {
                 .zindex(50) // Ensure it stays on top
                 .build();
 
-            // Open the window with our buffer
-            drop(candidate_window_guard);
+            // Drop lock before scheduling
+            drop(window_guard);
+
+            // Schedule window creation on main thread
             oxi::schedule({
                 let candidate_window = candidate_window.clone();
+                let buffer = buffer.clone();
                 move |_| {
-                    let mut candidate_window_guard = candidate_window.lock().unwrap();
-                    let mut window = api::open_win(&buffer, false, &opts).unwrap();
+                    match api::open_win(&buffer, false, &opts) {
+                        Ok(mut window) => {
+                            // Set window options
+                            let _ = window.set_option("winblend", 15);
+                            let _ = window.set_option("wrap", true);
+                            let _ = window.set_option("scrolloff", 0);
+                            let _ = window.set_option("sidescrolloff", 0);
 
-                    // Enhanced window options
-                    let _ = window.set_option("winblend", 15); // Slight transparency
-                    let _ = window.set_option("wrap", true);
-                    let _ = window.set_option("scrolloff", 0);
-                    let _ = window.set_option("sidescrolloff", 0);
-
-                    // Store the window
-                    candidate_window_guard.replace(window);
+                            // Store window safely
+                            if let Ok(mut window_guard) = candidate_window.lock() {
+                                *window_guard = Some(window);
+                            }
+                        }
+                        Err(e) => eprintln!("Failed to open window: {}", e),
+                    }
                 }
             });
         } else {
-            // If window exists, update its dimensions
-            let window_opt = candidate_window_guard.clone();
-            drop(candidate_window_guard);
+            // If window exists, only resize if needed
+            drop(window_guard); // Release lock before scheduling
 
-            if let Some(mut window) = window_opt {
-                if window.is_valid() {
-                    let _ = window.set_config(
-                        &WindowConfig::builder().width(width).height(height).build(),
-                    );
+            // Schedule safe window update
+            oxi::schedule({
+                let candidate_window = candidate_window.clone();
+                let width = width;
+                let height = height;
+                move |_| {
+                    if let Ok(mut window_guard) = candidate_window.lock() {
+                        if let Some(window) = window_guard.as_mut() {
+                            if window.is_valid() {
+                                let config = WindowConfig::builder()
+                                    .width(width)
+                                    .height(height)
+                                    .build();
+                                let _ = window.set_config(&config);
+                            }
+                        }
+                    }
                 }
-            }
+            });
         }
 
         Ok(())
@@ -205,77 +228,91 @@ impl CandidateState {
 
     /// Update the candidate window display
     pub fn update_display(&mut self) -> oxi::Result<()> {
-        if let Some(ref buffer) = self.buffer_id {
+        let buffer = match &self.buffer_id {
+            Some(buffer) => buffer.clone(),
+            None => return Ok(()),
+        };
+
+        // Calculate dimensions once
+        let (width, _) = self.calculate_window_dimensions();
+
+        // Generate content for the candidate window
+        let mut lines = Vec::new();
+
+        // Add preedit text at the top with better formatting
+        if !self.preedit_text.is_empty() {
+            lines.push(format!("  {}", self.preedit_text)); // Add a keyboard icon
+            lines.push("─".repeat((width as usize).saturating_sub(2))); // Clean separator line
+        }
+
+        // Add candidates with improved formatting
+        for (idx, candidate) in self.candidates.iter().enumerate() {
+            let marker = if idx == self.selected_index {
+                "►"
+            } else {
+                " "
+            };
+
+            lines.push(format!(
+                "{} {} {}",
+                marker, candidate.display, candidate.text
+            ));
+        }
+
+        // Add paging info at the bottom with better styling
+        if self.has_prev || self.has_next {
+            lines.push("─".repeat((width as usize).saturating_sub(2))); // Clean separator
+
+            let prev_indicator = if self.has_prev { "◄ Prev" } else { "      " };
+            let next_indicator = if self.has_next { "Next ►" } else { "      " };
+
+            // Add paging controls
+            lines.push(format!("{}    {}", prev_indicator, next_indicator));
+        }
+
+        // Update buffer content safely
+        oxi::schedule({
             let mut buffer = buffer.clone();
-            // Generate content for the candidate window
-            let mut lines = Vec::new();
-
-            // Add preedit text at the top with better formatting
-            if !self.preedit_text.is_empty() {
-                lines.push(format!("⌨  {}", self.preedit_text)); // Add a keyboard icon
-                lines.push(
-                    "─".repeat(self.calculate_window_dimensions().0 as usize - 2),
-                ); // Clean separator line
-            }
-
-            // Add candidates with improved formatting
-            for (idx, candidate) in self.candidates.iter().enumerate() {
-                let marker = if idx == self.selected_index {
-                    "►" // Triangle marker for selected item
-                } else {
-                    " " // Aligned space for non-selected
-                };
-
-                // Format with consistent spacing
-                lines.push(format!(
-                    "{} {:<4} {}",
-                    marker, candidate.display, candidate.text
-                ));
-            }
-
-            // Add paging info at the bottom with better styling
-            if self.has_prev || self.has_next {
-                lines.push(
-                    "─".repeat(self.calculate_window_dimensions().0 as usize - 2),
-                ); // Clean separator
-
-                let prev_indicator = if self.has_prev { "◄ Prev" } else { "      " };
-                let next_indicator = if self.has_next { "Next ►" } else { "      " };
-
-                // Center the paging controls
-                let total_width = self.calculate_window_dimensions().0 as usize - 2;
-                let paging_text = format!("{}    {}", prev_indicator, next_indicator);
-                let padding = if paging_text.len() < total_width {
-                    (total_width - paging_text.len()) / 2
-                } else {
-                    0
-                };
-
-                lines.push(format!("{}{}", " ".repeat(padding), paging_text));
-            }
-
-            // Update buffer content
-            loop {
-                match buffer.set_lines(0..buffer.line_count()?, true, lines.clone()) {
-                    Err(e)
-                        if e.to_string()
-                            == r#"Exception("Failed to save undo information")"# => {} // retry
-                    _ => break,
+            let lines = lines.clone();
+            move |_| {
+                // Only update buffer if it's valid
+                if !buffer.is_valid() {
+                    return;
                 }
-            }
 
-            // Resize window if necessary
-            let (width, height) = self.calculate_window_dimensions();
-            let candidate_window = get_candidate_window();
-            let mut window_guard = candidate_window.lock().unwrap();
-            if let Some(window) = window_guard.as_mut() {
-                if window.is_valid() {
-                    let _ = window.set_config(
-                        &WindowConfig::builder().width(width).height(height).build(),
+                // Get buffer line count safely
+                let line_count = match buffer.line_count() {
+                    Ok(count) => count,
+                    Err(_) => return,
+                };
+
+                // Update the lines, with retry on undo info failure
+                let mut success = false;
+                for _ in 0..3 {
+                    // Try up to 3 times
+                    match buffer.set_lines(0..line_count, true, lines.clone()) {
+                        Ok(_) => {
+                            success = true;
+                            break;
+                        }
+                        Err(e)
+                            if e.to_string()
+                                == r#"Exception("Failed to save undo information")"# =>
+                        {
+                            // Retry after small delay
+                            std::thread::sleep(std::time::Duration::from_millis(1));
+                        }
+                        Err(_) => break, // Different error, don't retry
+                    }
+                }
+
+                if !success {
+                    eprintln!(
+                        "Failed to update buffer content after multiple attempts"
                     );
                 }
             }
-        }
+        });
 
         Ok(())
     }

@@ -61,9 +61,16 @@ fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
         }
         "<cr>" => {
             let state_guard = state.lock().unwrap();
-            // deactivating followed by activating will commit the preedit string
-            ignore_dbus_no_interface_error!(state_guard.deactivate_im());
-            ignore_dbus_no_interface_error!(state_guard.activate_im());
+            let candidate_state = state_guard.candidate_state.clone();
+            let mut candidate_guard = candidate_state.lock().unwrap();
+            let insert_text = candidate_guard.preedit_text.replace(' ', "").clone();
+            candidate_guard.mark_for_insert(insert_text);
+            ignore_dbus_no_interface_error!(state_guard.reset_im_ctx());
+            drop(candidate_guard);
+            oxi::schedule({
+                let candidate_state = candidate_state.clone();
+                move |_| process_candidate_updates(candidate_state.clone())
+            });
             Ok(())
         }
         "<esc>" => {

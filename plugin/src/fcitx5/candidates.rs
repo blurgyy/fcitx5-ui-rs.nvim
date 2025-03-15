@@ -167,87 +167,46 @@ impl CandidateState {
         if self.buffer_id.is_none() {
             // Create a new scratch buffer for candidates
             self.buffer_id = Some(api::create_buf(false, true)?);
-
-            // Set buffer options for better appearance
-            if let Some(buf) = self.buffer_id.as_mut() {
-                let _ = buf.set_option("bufhidden", "hide");
-                let _ = buf.set_option("filetype", "fcitx5candidates");
-            }
         }
 
-        // Calculate window dimensions once
-        let (width, height) = self.calculate_window_dimensions();
+        // Make sure the buffer exists
+        let buffer = self.buffer_id.as_ref().unwrap().clone();
 
         // Create the floating window for candidates if needed
         let candidate_window = get_candidate_window();
-        let window_guard = candidate_window.lock().unwrap();
-        if window_guard.is_none() {
-            // Get buffer reference - avoid cloning repeatedly
-            let buffer = match &self.buffer_id {
-                Some(b) => b,
-                None => return Ok(()),
-            };
-
-            // Create window options with improved appearance
+        let candidate_window_guard = candidate_window.lock().unwrap();
+        if candidate_window_guard.is_none() {
+            // Create window options
             let opts = WindowConfig::builder()
                 .relative(WindowRelativeTo::Cursor)
                 .row(1)
                 .col(0)
-                .width(width)
-                .height(height)
+                .width(30)
+                .height(10)
                 .focusable(false)
                 .border(WindowBorder::Rounded)
                 .title(WindowTitle::SimpleString(
-                    " Fcitx5 ".to_owned().into(), // More compact title with spacing
+                    " Fcitx5 ".to_owned().into(), // More compact title
                 ))
                 .title_pos(WindowTitlePosition::Center)
                 .style(WindowStyle::Minimal)
-                .zindex(50) // Ensure it stays on top
                 .build();
 
-            // Drop lock before scheduling
-            drop(window_guard);
-
-            // Schedule window creation on main thread
+            // Open the window with our buffer
+            drop(candidate_window_guard);
             oxi::schedule({
                 let candidate_window = candidate_window.clone();
                 let buffer = buffer.clone();
                 move |_| {
+                    let mut candidate_window_guard = candidate_window.lock().unwrap();
                     match api::open_win(&buffer, false, &opts) {
                         Ok(mut window) => {
                             // Set window options
                             let _ = window.set_option("winblend", 15);
                             let _ = window.set_option("wrap", true);
-                            let _ = window.set_option("scrolloff", 0);
-                            let _ = window.set_option("sidescrolloff", 0);
-
-                            // Store window safely
-                            if let Ok(mut window_guard) = candidate_window.lock() {
-                                *window_guard = Some(window);
-                            }
+                            candidate_window_guard.replace(window);
                         }
-                        Err(e) => eprintln!("Failed to open window: {}", e),
-                    }
-                }
-            });
-        } else {
-            // If window exists, only resize if needed
-            drop(window_guard); // Release lock before scheduling
-
-            // Schedule safe window update
-            oxi::schedule({
-                let candidate_window = candidate_window.clone();
-                move |_| {
-                    if let Ok(mut window_guard) = candidate_window.lock() {
-                        if let Some(window) = window_guard.as_mut() {
-                            if window.is_valid() {
-                                let config = WindowConfig::builder()
-                                    .width(width)
-                                    .height(height)
-                                    .build();
-                                let _ = window.set_config(&config);
-                            }
-                        }
+                        Err(e) => eprintln!("Error creating window: {}", e),
                     }
                 }
             });
@@ -258,21 +217,19 @@ impl CandidateState {
 
     /// Update the candidate window display
     pub fn update_display(&mut self) -> oxi::Result<()> {
-        let buffer = match &self.buffer_id {
-            Some(buffer) => buffer.clone(),
-            None => return Ok(()),
-        };
+        if self.buffer_id.is_none() {
+            return Ok(());
+        }
 
-        // Calculate dimensions once
-        let (width, _) = self.calculate_window_dimensions();
+        let buffer = self.buffer_id.as_ref().unwrap().clone();
 
         // Generate content for the candidate window
         let mut lines = Vec::new();
 
         // Add preedit text at the top with better formatting
         if !self.preedit_text.is_empty() {
-            lines.push(format!("   {}", self.preedit_text)); // keyboard icon
-            lines.push("─".repeat(width as usize));
+            lines.push(format!("   {}", self.preedit_text));
+            lines.push("─".repeat(30)); // Fixed width separator
         }
 
         // Add candidates with improved formatting
@@ -282,7 +239,6 @@ impl CandidateState {
             } else {
                 " "
             };
-
             lines.push(format!(
                 "{} {} {}",
                 marker, candidate.display, candidate.text
@@ -291,132 +247,29 @@ impl CandidateState {
 
         // Add paging info at the bottom with better styling
         if self.has_prev || self.has_next {
-            lines.push("─".repeat(width as usize)); // Clean separator
+            lines.push("─".repeat(30)); // Fixed width separator
 
-            // Define indicators
             let prev_part = if self.has_prev { "◄ Prev" } else { "      " };
             let next_part = if self.has_next { "Next ►" } else { "      " };
 
-            // Calculate visual widths properly
-            let prev_width = UnicodeWidthStr::width(prev_part);
-            let next_width = UnicodeWidthStr::width(next_part);
-
-            // Calculate the total width available
-            let total_width = width as usize;
-
-            // Create a line with prev on far left and next on far right
-            let mut paging_line = String::with_capacity(total_width);
-
-            // Add the prev indicator (or its placeholder)
-            paging_line.push_str(prev_part);
-
-            // Fill the middle with spaces to push "Next" to the right edge
-            let spaces_needed = total_width.saturating_sub(prev_width + next_width);
-            paging_line.push_str(&" ".repeat(spaces_needed));
-
-            // Add the next indicator
-            paging_line.push_str(next_part);
-
-            // Ensure the line is exactly the right width by truncating if needed
-            if UnicodeWidthStr::width(paging_line.as_str()) > total_width {
-                // Truncate based on visual width, not character count
-                while UnicodeWidthStr::width(paging_line.as_str()) > total_width
-                    && !paging_line.is_empty()
-                {
-                    paging_line.pop();
-                }
-            }
-
-            // Add the properly formatted paging line
-            lines.push(paging_line);
+            // Simple line with fixed spacing
+            lines.push(format!("{}          {}", prev_part, next_part));
         }
 
-        // Remove the buffer update code that might be adding an extra empty line
-
-        // Update buffer content safely
+        // Update buffer content on main thread without any window resizing
         oxi::schedule({
-            let mut buffer = buffer.clone();
-            let lines = lines.clone();
+            let mut buffer = buffer;
+            let lines = lines;
             move |_| {
-                // Only update buffer if it's valid
                 if !buffer.is_valid() {
                     return;
                 }
 
-                // Get buffer line count safely
-                let line_count = match buffer.line_count() {
-                    Ok(count) => count,
-                    Err(_) => return,
-                };
-
-                // Update the lines, with retry on undo info failure
-                let mut success = false;
-                for _ in 0..3 {
-                    // Try up to 3 times
-                    match buffer.set_lines(0..line_count, true, lines.clone()) {
-                        Ok(_) => {
-                            success = true;
-                            break;
-                        }
-                        Err(e)
-                            if e.to_string()
-                                == r#"Exception("Failed to save undo information")"# =>
-                        {
-                            // Retry after small delay
-                            std::thread::sleep(std::time::Duration::from_millis(1));
-                        }
-                        Err(_) => break, // Different error, don't retry
+                match buffer.line_count() {
+                    Ok(line_count) => {
+                        let _ = buffer.set_lines(0..line_count, true, lines);
                     }
-                }
-
-                if !success {
-                    eprintln!(
-                        "Failed to update buffer content after multiple attempts"
-                    );
-                }
-            }
-        });
-
-        // Update buffer content safely
-        oxi::schedule({
-            let mut buffer = buffer.clone();
-            let lines = lines.clone();
-            move |_| {
-                // Only update buffer if it's valid
-                if !buffer.is_valid() {
-                    return;
-                }
-
-                // Get buffer line count safely
-                let line_count = match buffer.line_count() {
-                    Ok(count) => count,
-                    Err(_) => return,
-                };
-
-                // Update the lines, with retry on undo info failure
-                let mut success = false;
-                for _ in 0..3 {
-                    // Try up to 3 times
-                    match buffer.set_lines(0..line_count, true, lines.clone()) {
-                        Ok(_) => {
-                            success = true;
-                            break;
-                        }
-                        Err(e)
-                            if e.to_string()
-                                == r#"Exception("Failed to save undo information")"# =>
-                        {
-                            // Retry after small delay
-                            std::thread::sleep(std::time::Duration::from_millis(1));
-                        }
-                        Err(_) => break, // Different error, don't retry
-                    }
-                }
-
-                if !success {
-                    eprintln!(
-                        "Failed to update buffer content after multiple attempts"
-                    );
+                    Err(_) => {}
                 }
             }
         });

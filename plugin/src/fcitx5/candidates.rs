@@ -31,20 +31,6 @@ pub struct Candidate {
     pub text: String,
 }
 
-#[derive(Clone, Debug, Copy)]
-pub enum UpdateVariant {
-    #[allow(dead_code)]
-    Show,
-
-    #[allow(dead_code)]
-    Hide,
-
-    Insert,
-
-    #[allow(dead_code)]
-    UpdateContent,
-}
-
 #[derive(Clone, Debug)]
 pub enum UpdateType {
     Show,
@@ -72,8 +58,6 @@ pub struct CandidateState {
     pub is_visible: bool,
     /// Whether the window should be updated
     pub update_queue: VecDeque<UpdateType>,
-    /// If [`Some`], skip next event whose type matches this variant
-    pub skip_next: Option<UpdateVariant>,
 }
 
 impl CandidateState {
@@ -87,7 +71,6 @@ impl CandidateState {
             has_next: false,
             is_visible: false,
             update_queue: VecDeque::new(),
-            skip_next: None,
         }
     }
 
@@ -225,10 +208,6 @@ impl CandidateState {
 
     pub fn mark_for_update(&mut self) {
         self.update_queue.push_back(UpdateType::UpdateContent);
-    }
-
-    pub fn mark_for_skip_next(&mut self, variant: UpdateVariant) {
-        self.skip_next = Some(variant);
     }
 
     pub fn pop_update(&mut self) -> Option<UpdateType> {

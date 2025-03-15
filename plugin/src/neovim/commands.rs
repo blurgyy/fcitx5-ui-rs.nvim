@@ -13,6 +13,7 @@ use fcitx5_dbus::utils::key_event::{
     KeyState as Fcitx5KeyState, KeyVal as Fcitx5KeyVal,
 };
 
+use crate::plugin::get_state;
 use crate::{
     fcitx5::candidates::setup_candidate_receivers, ignore_dbus_no_interface_error,
     plugin::get_candidate_state,
@@ -20,7 +21,6 @@ use crate::{
 use crate::{
     fcitx5::candidates::CandidateState, neovim::autocmds::register_autocommands,
 };
-use crate::{fcitx5::candidates::UpdateVariant, plugin::get_state};
 use crate::{
     fcitx5::{candidates::UpdateType, connection::prepare},
     plugin::Fcitx5Plugin,
@@ -216,29 +216,6 @@ pub fn process_candidate_updates(
     // Get the state and check for pending updates
     let mut guard = candidate_state.lock().unwrap();
     while let Some(update_type) = guard.pop_update() {
-        match guard.skip_next {
-            Some(UpdateVariant::Show) if matches!(update_type, UpdateType::Show) => {
-                guard.skip_next.take();
-                continue;
-            }
-            Some(UpdateVariant::Insert)
-                if matches!(update_type, UpdateType::Insert(_)) =>
-            {
-                guard.skip_next.take();
-                continue;
-            }
-            Some(UpdateVariant::UpdateContent)
-                if matches!(update_type, UpdateType::UpdateContent) =>
-            {
-                guard.skip_next.take();
-                continue;
-            }
-            Some(UpdateVariant::Hide) if matches!(update_type, UpdateType::Hide) => {
-                guard.skip_next.take();
-                continue;
-            }
-            _ => {}
-        }
         match update_type {
             UpdateType::Show => {
                 guard.is_visible = true;

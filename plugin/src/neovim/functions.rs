@@ -6,11 +6,23 @@ use nvim_oxi::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::plugin::PLUGIN_NAME;
+use crate::plugin::{get_state, PLUGIN_NAME};
 
 #[derive(Deserialize, Serialize)]
 pub struct PluginConfig {
+    #[serde(default)]
     pub on_key: Option<String>,
+    #[serde(default = "default_im_activated")]
+    pub im_activated: Option<String>,
+    #[serde(default = "default_im_deactivated")]
+    pub im_deactivated: Option<String>,
+}
+
+fn default_im_activated() -> Option<String> {
+    Some("pinyin".to_owned())
+}
+fn default_im_deactivated() -> Option<String> {
+    Some("keyboard-us".to_owned())
 }
 
 impl FromObject for PluginConfig {
@@ -45,6 +57,25 @@ impl lua::Pushable for PluginConfig {
 }
 
 pub fn setup(config: PluginConfig) -> bool {
+    if config.im_activated.is_none() {
+        oxi::print!("{PLUGIN_NAME}: setup failed: Must set `im_activated` in setup()!");
+        return false;
+    }
+    if config.im_activated.is_none() {
+        oxi::print!(
+            "{PLUGIN_NAME}: setup failed: Must set `im_deactivated` in setup()!"
+        );
+        return false;
+    }
+
+    // set config into plugin state
+    let state = get_state();
+    let mut state_guard = state.lock().unwrap();
+    state_guard.im_activated = config.im_activated;
+    state_guard.im_deactivated = config.im_deactivated;
+    // drop to not block
+    drop(state_guard);
+
     // Initialize the plugin's commands
     match crate::neovim::commands::register_commands() {
         Err(e) => {

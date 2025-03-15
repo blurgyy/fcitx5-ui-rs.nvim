@@ -7,8 +7,6 @@ use fcitx5_dbus::{
     input_method::InputMethodProxyBlocking,
 };
 
-use crate::fcitx5::commands::set_im_en;
-
 /// Establishes a connection with Fcitx5 and creates an input context
 pub fn prepare() -> Result<(
     ControllerProxyBlocking<'static>,
@@ -23,7 +21,6 @@ pub fn prepare() -> Result<(
 
     let ctx = InputContextProxyBlocking::builder(&conn).path(p)?.build()?;
     ctx.set_capability(CapabilityFlag::ClientSideInputPanel)?;
-    set_im_en(&controller, &ctx)?;
 
     Ok((controller, ctx))
 }

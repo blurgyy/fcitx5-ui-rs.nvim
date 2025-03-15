@@ -2,18 +2,22 @@
 
 use fcitx5_dbus::controller::ControllerProxyBlocking;
 use fcitx5_dbus::input_context::InputContextProxyBlocking;
+use fcitx5_dbus::zbus::Result;
+use nvim_oxi as oxi;
 use std::sync::{Arc, Mutex};
 
 use crate::fcitx5::candidates::CandidateState;
+use crate::utils::as_api_error;
 
 // Structure to hold the plugin state
 pub struct Fcitx5Plugin {
     pub controller: Option<ControllerProxyBlocking<'static>>,
     pub ctx: Option<InputContextProxyBlocking<'static>>,
     pub augroup_id: Option<u32>,
-    pub initialized: bool,
     pub candidate_state: Arc<Mutex<CandidateState>>,
     pub candidate_window: Arc<Mutex<Option<nvim_oxi::api::Window>>>,
+    pub im_activated: Option<String>,
+    pub im_deactivated: Option<String>,
 }
 
 impl Fcitx5Plugin {
@@ -22,10 +26,79 @@ impl Fcitx5Plugin {
             controller: None,
             ctx: None,
             augroup_id: None,
-            initialized: false,
             candidate_state: Arc::new(Mutex::new(CandidateState::new())),
             candidate_window: Arc::new(Mutex::new(None)),
+            im_activated: None,
+            im_deactivated: None,
         }
+    }
+
+    pub fn initialized(&self) -> bool {
+        self.controller.is_some() && self.ctx.is_some()
+    }
+
+    pub fn reset_im_ctx(&self) -> oxi::Result<()> {
+        if let Some(ctx) = self.ctx.as_ref() {
+            ctx.reset().map_err(|e| as_api_error(e).into())
+        } else {
+            Err(oxi::api::Error::Other(format!(
+                "{PLUGIN_NAME}: could not reset input method context (not initialized)"
+            ))
+            .into())
+        }
+    }
+
+    pub fn get_im(&self) -> oxi::Result<String> {
+        if self.initialized() {
+            self.controller
+                .as_ref()
+                .unwrap()
+                .current_input_method()
+                .map_err(|e| as_api_error(e).into())
+        } else {
+            Err(oxi::api::Error::Other(format!(
+                "{PLUGIN_NAME}: could not get current input method (not initialized)",
+            ))
+            .into())
+        }
+    }
+
+    pub fn toggle_im(&self) -> Result<()> {
+        if let (Some(controller), Some(ctx)) =
+            (self.controller.as_ref(), self.ctx.as_ref())
+        {
+            ctx.focus_in()?;
+            controller.toggle()?;
+        }
+        Ok(())
+    }
+
+    pub fn activate_im(&self) -> Result<()> {
+        if let (Some(controller), Some(ctx), Some(im_activated)) = (
+            self.controller.as_ref(),
+            self.ctx.as_ref(),
+            self.im_activated.as_ref(),
+        ) {
+            ctx.focus_in()?;
+            if controller.current_input_method()? != *im_activated {
+                controller.toggle()?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn deactivate_im(&self) -> Result<()> {
+        if let (Some(controller), Some(ctx), Some(im_deactivated)) = (
+            self.controller.as_ref(),
+            self.ctx.as_ref(),
+            self.im_deactivated.as_ref(),
+        ) {
+            ctx.focus_in()?;
+            if controller.current_input_method()? != *im_deactivated {
+                controller.toggle()?;
+            }
+        }
+        Ok(())
     }
 }
 

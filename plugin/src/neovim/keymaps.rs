@@ -11,7 +11,7 @@ pub fn register_keymaps(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     let state_guard = state.lock().unwrap();
 
     // Only proceed if initialized
-    if !state_guard.initialized {
+    if !state_guard.initialized() {
         return Ok(());
     }
 

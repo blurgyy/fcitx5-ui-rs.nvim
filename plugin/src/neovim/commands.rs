@@ -14,16 +14,12 @@ use fcitx5_dbus::utils::key_event::{
 };
 
 use crate::{
+    fcitx5::candidates::setup_candidate_receivers, plugin::get_candidate_state,
+};
+use crate::{
     fcitx5::candidates::CandidateState, neovim::autocmds::register_autocommands,
 };
 use crate::{fcitx5::candidates::UpdateVariant, plugin::get_state};
-use crate::{
-    fcitx5::{
-        candidates::setup_candidate_receivers,
-        commands::{set_im_en, set_im_zh, toggle_im},
-    },
-    plugin::get_candidate_state,
-};
 use crate::{
     fcitx5::{candidates::UpdateType, connection::prepare},
     plugin::Fcitx5Plugin,
@@ -64,20 +60,22 @@ fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
         }
         "<cr>" => {
             let state_guard = state.lock().unwrap();
-            let ctx = state_guard.ctx.as_ref().unwrap();
-            let controller = state_guard.controller.as_ref().unwrap();
-            set_im_en(controller, ctx).map_err(as_api_error)?;
-            set_im_zh(controller, ctx).map_err(|e| as_api_error(e).into())
+            // deactivating followed by activating will commit the preedit string
+            state_guard.deactivate_im().map_err(as_api_error)?;
+            state_guard
+                .activate_im()
+                .map_err(|e| as_api_error(e).into())
         }
         "<esc>" => {
             let state_guard = state.lock().unwrap();
             let candidate_state = state_guard.candidate_state.clone();
             let mut candidate_guard = candidate_state.lock().unwrap();
+            // brace for the next preedit string commit update
             candidate_guard.mark_for_skip_next(UpdateVariant::Insert);
-            let ctx = state_guard.ctx.as_ref().unwrap();
-            let controller = state_guard.controller.as_ref().unwrap();
-            set_im_en(controller, ctx).map_err(as_api_error)?;
-            set_im_zh(controller, ctx).map_err(as_api_error)?;
+            // deactivating followed by activating will commit the preedit string, but we have
+            // skip the next commit update (see above)
+            state_guard.deactivate_im().map_err(as_api_error)?;
+            state_guard.activate_im().map_err(as_api_error)?;
             candidate_guard.mark_for_update();
             drop(candidate_guard);
             oxi::schedule(move |_| process_candidate_updates(candidate_state.clone()));
@@ -109,13 +107,17 @@ pub fn register_commands() -> oxi::Result<()> {
     api::create_user_command(
         "Fcitx5PluginLoad",
         move |_| load_plugin(get_state()),
-        &CreateCommandOpts::default(),
+        &CreateCommandOpts::builder()
+            .desc("Setup input method auto-activation")
+            .build(),
     )?;
 
     api::create_user_command(
         "Fcitx5PluginUnload",
         move |_| unload_plugin(get_state()),
-        &CreateCommandOpts::default(),
+        &CreateCommandOpts::builder()
+            .desc("Disable input method auto-activation")
+            .build(),
     )?;
 
     api::create_user_command(
@@ -123,7 +125,7 @@ pub fn register_commands() -> oxi::Result<()> {
         move |_| {
             let state = get_state();
             let state_guard = state.lock().unwrap();
-            if state_guard.initialized {
+            if state_guard.initialized() {
                 drop(state_guard);
                 unload_plugin(get_state())
             } else {
@@ -131,7 +133,9 @@ pub fn register_commands() -> oxi::Result<()> {
                 load_plugin(get_state())
             }
         },
-        &CreateCommandOpts::default(),
+        &CreateCommandOpts::builder()
+            .desc("Toggle input method auto-activation")
+            .build(),
     )?;
 
     // These commands will check if initialized before proceeding
@@ -141,27 +145,23 @@ pub fn register_commands() -> oxi::Result<()> {
             let state = state.clone();
             move |_| {
                 let state_guard = state.lock().unwrap();
-                if !state_guard.initialized {
+                if !state_guard.initialized() {
                     return Err(as_api_error(IoError::new(
                         ErrorKind::Other,
                         "Fcitx5 plugin not loaded. Run :Fcitx5PluginLoad first",
                     )));
                 }
 
-                let controller = state_guard.controller.as_ref().unwrap();
-                let ctx = state_guard.ctx.as_ref().unwrap();
+                state_guard.toggle_im().map_err(as_api_error)?;
 
-                toggle_im(controller, ctx).map_err(as_api_error)?;
-
-                oxi::print!(
-                    "current IM: {}",
-                    controller.current_input_method().map_err(as_api_error)?
-                );
+                oxi::print!("{}", state_guard.get_im().map_err(as_api_error)?);
 
                 Ok(())
             }
         },
-        &CreateCommandOpts::default(),
+        &CreateCommandOpts::builder()
+            .desc("Toggle input method (not toggling the plugin)")
+            .build(),
     )?;
 
     api::create_user_command(
@@ -170,17 +170,14 @@ pub fn register_commands() -> oxi::Result<()> {
             let state = state.clone();
             move |_| {
                 let state_guard = state.lock().unwrap();
-                if !state_guard.initialized {
+                if !state_guard.initialized() {
                     return Err(as_api_error(IoError::new(
                         ErrorKind::Other,
                         "Fcitx5 plugin not loaded. Run :Fcitx5PluginLoad first",
                     )));
                 }
 
-                let controller = state_guard.controller.as_ref().unwrap();
-                let ctx = state_guard.ctx.as_ref().unwrap();
-
-                set_im_zh(controller, ctx).map_err(as_api_error)
+                state_guard.activate_im().map_err(as_api_error)
             }
         },
         &CreateCommandOpts::default(),
@@ -192,17 +189,14 @@ pub fn register_commands() -> oxi::Result<()> {
             let state = state.clone();
             move |_| {
                 let state_guard = state.lock().unwrap();
-                if !state_guard.initialized {
+                if !state_guard.initialized() {
                     return Err(as_api_error(IoError::new(
                         ErrorKind::Other,
                         "Fcitx5 plugin not loaded. Run :Fcitx5PluginLoad first",
                     )));
                 }
 
-                let controller = state_guard.controller.as_ref().unwrap();
-                let ctx = state_guard.ctx.as_ref().unwrap();
-
-                set_im_en(controller, ctx).map_err(as_api_error)
+                state_guard.deactivate_im().map_err(as_api_error)
             }
         },
         &CreateCommandOpts::default(),
@@ -312,7 +306,7 @@ pub fn process_candidate_updates(
 pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
-    if state_guard.initialized {
+    if state_guard.initialized() {
         oxi::print!("Fcitx5 plugin already loaded");
         return Ok(());
     }
@@ -326,7 +320,7 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     // Store in state
     state_guard.controller = Some(controller.clone());
     state_guard.ctx = Some(ctx.clone());
-    state_guard.initialized = true;
+    state_guard.deactivate_im().map_err(as_api_error)?;
 
     let trigger =
         AsyncHandle::new(move || process_candidate_updates(get_candidate_state()))?;
@@ -334,6 +328,13 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     // Setup candidate receivers
     setup_candidate_receivers(&ctx, candidate_state, trigger.clone())
         .map_err(as_api_error)?;
+
+    // if already in insert mode, set the im
+    if let Ok(got_mode) = api::get_mode() {
+        if got_mode.mode == api::types::Mode::Insert {
+            state_guard.activate_im().map_err(as_api_error)?;
+        }
+    }
 
     // Release the lock before setting up autocommands
     drop(state_guard);
@@ -343,13 +344,6 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
 
     register_keymaps(state.clone())?;
 
-    // if already in insert mode, set the im
-    if let Ok(got_mode) = api::get_mode() {
-        if got_mode.mode == api::types::Mode::Insert {
-            set_im_zh(&controller, &ctx).map_err(as_api_error)?;
-        }
-    }
-
     Ok(())
 }
 
@@ -357,20 +351,17 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
 pub fn unload_plugin(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
-    if !state_guard.initialized && state_guard.controller.is_none() {
+    if !state_guard.initialized() && state_guard.controller.is_none() {
         oxi::print!("Fcitx5 plugin already unloaded");
         return Ok(());
     }
 
     // Reset and clear the input context if it exists
-    if let Some(ctx) = &state_guard.ctx {
-        ctx.reset().map_err(as_api_error)?;
-    }
+    state_guard.reset_im_ctx()?;
 
     // Clear state
     state_guard.controller = None;
     state_guard.ctx = None;
-    state_guard.initialized = false;
 
     drop(state_guard);
 

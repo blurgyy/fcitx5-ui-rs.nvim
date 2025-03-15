@@ -12,16 +12,18 @@ use crate::plugin::{get_state, PLUGIN_NAME};
 pub struct PluginConfig {
     #[serde(default)]
     pub on_key: Option<String>,
-    #[serde(default = "default_im_activated")]
-    pub im_activated: Option<String>,
-    #[serde(default = "default_im_deactivated")]
-    pub im_deactivated: Option<String>,
+
+    #[serde(default = "default_im_active")]
+    pub im_active: Option<String>,
+
+    #[serde(default = "default_im_inactive")]
+    pub im_inactive: Option<String>,
 }
 
-fn default_im_activated() -> Option<String> {
+fn default_im_active() -> Option<String> {
     Some("pinyin".to_owned())
 }
-fn default_im_deactivated() -> Option<String> {
+fn default_im_inactive() -> Option<String> {
     Some("keyboard-us".to_owned())
 }
 
@@ -57,22 +59,20 @@ impl lua::Pushable for PluginConfig {
 }
 
 pub fn setup(config: PluginConfig) -> bool {
-    if config.im_activated.is_none() {
-        oxi::print!("{PLUGIN_NAME}: setup failed: Must set `im_activated` in setup()!");
+    if config.im_active.is_none() {
+        oxi::print!("{PLUGIN_NAME}: setup failed: Must set `im_active` in setup()!");
         return false;
     }
-    if config.im_activated.is_none() {
-        oxi::print!(
-            "{PLUGIN_NAME}: setup failed: Must set `im_deactivated` in setup()!"
-        );
+    if config.im_inactive.is_none() {
+        oxi::print!("{PLUGIN_NAME}: setup failed: Must set `im_inactive` in setup()!");
         return false;
     }
 
     // set config into plugin state
     let state = get_state();
     let mut state_guard = state.lock().unwrap();
-    state_guard.im_active = config.im_activated;
-    state_guard.im_inactive = config.im_deactivated;
+    state_guard.im_active = config.im_active;
+    state_guard.im_inactive = config.im_inactive;
     // drop to not block
     drop(state_guard);
 

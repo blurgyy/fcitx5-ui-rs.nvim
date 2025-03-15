@@ -21,6 +21,7 @@ use std::{
     collections::VecDeque,
     sync::{Arc, Mutex},
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::plugin::get_candidate_window;
 
@@ -150,12 +151,12 @@ impl CandidateState {
         }
 
         // Calculate height based on number of items plus headers/footers
-        let base_height = if !self.preedit_text.is_empty() { 3 } else { 1 };
-        let paging_height = if self.has_prev || self.has_next { 2 } else { 0 };
+        let base_height = if !self.preedit_text.is_empty() { 2 } else { 0 }; // Header + separator (or nothing)
+        let paging_height = if self.has_prev || self.has_next { 2 } else { 0 }; // Separator + paging line
+        let content_height = self.candidates.len() as u32;
 
-        // Calculate total height
-        let height =
-            (base_height + self.candidates.len() as u32 + paging_height).clamp(3, 15);
+        // Calculate total height - remove the extra line
+        let height = (base_height + content_height + paging_height).clamp(3, 15);
 
         (width, height)
     }
@@ -270,8 +271,8 @@ impl CandidateState {
 
         // Add preedit text at the top with better formatting
         if !self.preedit_text.is_empty() {
-            lines.push(format!("  {}", self.preedit_text));
-            lines.push("─".repeat((width as usize).saturating_sub(2)));
+            lines.push(format!("   {}", self.preedit_text)); // keyboard icon
+            lines.push("─".repeat(width as usize));
         }
 
         // Add candidates with improved formatting
@@ -290,14 +291,91 @@ impl CandidateState {
 
         // Add paging info at the bottom with better styling
         if self.has_prev || self.has_next {
-            lines.push("─".repeat((width as usize).saturating_sub(2))); // Clean separator
+            lines.push("─".repeat(width as usize)); // Clean separator
 
-            let prev_indicator = if self.has_prev { "◄ Prev" } else { "      " };
-            let next_indicator = if self.has_next { "Next ►" } else { "      " };
+            // Define indicators
+            let prev_part = if self.has_prev { "◄ Prev" } else { "      " };
+            let next_part = if self.has_next { "Next ►" } else { "      " };
 
-            // Add paging controls
-            lines.push(format!("{}    {}", prev_indicator, next_indicator));
+            // Calculate visual widths properly
+            let prev_width = UnicodeWidthStr::width(prev_part);
+            let next_width = UnicodeWidthStr::width(next_part);
+
+            // Calculate the total width available
+            let total_width = width as usize;
+
+            // Create a line with prev on far left and next on far right
+            let mut paging_line = String::with_capacity(total_width);
+
+            // Add the prev indicator (or its placeholder)
+            paging_line.push_str(prev_part);
+
+            // Fill the middle with spaces to push "Next" to the right edge
+            let spaces_needed = total_width.saturating_sub(prev_width + next_width);
+            paging_line.push_str(&" ".repeat(spaces_needed));
+
+            // Add the next indicator
+            paging_line.push_str(next_part);
+
+            // Ensure the line is exactly the right width by truncating if needed
+            if UnicodeWidthStr::width(paging_line.as_str()) > total_width {
+                // Truncate based on visual width, not character count
+                while UnicodeWidthStr::width(paging_line.as_str()) > total_width
+                    && !paging_line.is_empty()
+                {
+                    paging_line.pop();
+                }
+            }
+
+            // Add the properly formatted paging line
+            lines.push(paging_line);
         }
+
+        // Remove the buffer update code that might be adding an extra empty line
+
+        // Update buffer content safely
+        oxi::schedule({
+            let mut buffer = buffer.clone();
+            let lines = lines.clone();
+            move |_| {
+                // Only update buffer if it's valid
+                if !buffer.is_valid() {
+                    return;
+                }
+
+                // Get buffer line count safely
+                let line_count = match buffer.line_count() {
+                    Ok(count) => count,
+                    Err(_) => return,
+                };
+
+                // Update the lines, with retry on undo info failure
+                let mut success = false;
+                for _ in 0..3 {
+                    // Try up to 3 times
+                    match buffer.set_lines(0..line_count, true, lines.clone()) {
+                        Ok(_) => {
+                            success = true;
+                            break;
+                        }
+                        Err(e)
+                            if e.to_string()
+                                == r#"Exception("Failed to save undo information")"# =>
+                        {
+                            // Retry after small delay
+                            std::thread::sleep(std::time::Duration::from_millis(1));
+                        }
+                        Err(_) => break, // Different error, don't retry
+                    }
+                }
+
+                if !success {
+                    eprintln!(
+                        "Failed to update buffer content after multiple attempts"
+                    );
+                }
+            }
+        });
 
         // Update buffer content safely
         oxi::schedule({

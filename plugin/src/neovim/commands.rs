@@ -83,20 +83,6 @@ fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
         }
         _ => Ok::<_, oxi::Error>(()),
     }
-
-    // let fcitx5_key_code = match nvim_keycode.to_lowercase().as_str() {
-    //     "<bs>" => fcitx5_dbus::utils::key_event::KeyVal::DELETE,
-    //     _ => fcitx5_dbus::utils::key_event::KeyVal::from_char(the_char),
-    // };
-    // let fcitx5_key_state = fcitx5_dbus::utils::key_event::KeyState::NoState;
-    // let accept = ctx
-    //     .process_key_event(fcitx5_key_code, 0, fcitx5_key_state, false, 0)
-    //     .map_err(as_api_error)?;
-    // candidate_guard.mark_for_update();
-    // drop(candidate_guard);
-    // drop(state_guard);
-    // process_candidate_updates(get_candidate_state())?;
-    // Ok::<_, oxi::Error>(())
 }
 
 /// Register all plugin commands

@@ -92,10 +92,9 @@ impl CandidateState {
 
     /// Calculate the optimal width for the window based on content
     fn calculate_window_dimensions(&self) -> (u32, u32) {
-        // Start with reasonable defaults
-        let mut width = 30;
-
         // Calculate width based on content
+        let mut width = 30; // Start with reasonable default
+
         if !self.candidates.is_empty() {
             // Find the longest candidate text
             let max_candidate_len = self
@@ -103,7 +102,7 @@ impl CandidateState {
                 .iter()
                 .map(|c| c.display.len() + c.text.len() + 3) // +3 for marker and space
                 .max()
-                .unwrap_or(20);
+                .unwrap_or(0);
 
             // Find longest preedit text
             let preedit_len = if !self.preedit_text.is_empty() {
@@ -112,15 +111,47 @@ impl CandidateState {
                 0
             };
 
-            // Set width to max of candidate length or preedit length, plus padding
-            width = std::cmp::max(max_candidate_len as u32, preedit_len as u32) + 4;
+            // Find max length needed
+            let needed_len = std::cmp::max(max_candidate_len, preedit_len);
+
+            // Use gradual growth function instead of direct 1:1 mapping
+            // For small changes, grow slowly; for larger changes, grow more
+            if needed_len > 0 {
+                if needed_len <= 20 {
+                    // For small text, use fixed size
+                    width = 30;
+                } else if needed_len <= 40 {
+                    // For medium text, grow at about 80% of text growth
+                    width = 30 + ((needed_len - 20) as f32 * 0.8) as u32;
+                } else {
+                    // For larger text, grow at about 90% rate
+                    width = 46 + ((needed_len - 40) as f32 * 0.9) as u32;
+                }
+
+                // Add minimal padding for aesthetics (reduced from 4 to 2)
+                width += 2;
+
+                // Apply hysteresis to prevent small oscillations
+                // Only change size if it would be at least 4 chars different
+                if let Some(window) = get_candidate_window().lock().unwrap().as_ref() {
+                    if window.is_valid() {
+                        if let Ok(config) = window.get_config() {
+                            let current_width = config.width.unwrap_or(0);
+                            if (width as i32 - current_width as i32).abs() < 4 {
+                                width = current_width;
+                            }
+                        }
+                    }
+                }
+            }
+
             // Ensure width is at least 20 and at most 60 characters
             width = width.clamp(20, 60);
         }
 
         // Calculate height based on number of items plus headers/footers
-        let base_height = if !self.preedit_text.is_empty() { 3 } else { 1 }; // Preedit + separator or just minimal padding
-        let paging_height = if self.has_prev || self.has_next { 2 } else { 0 }; // Paging controls + separator
+        let base_height = if !self.preedit_text.is_empty() { 3 } else { 1 };
+        let paging_height = if self.has_prev || self.has_next { 2 } else { 0 };
 
         // Calculate total height
         let height =
@@ -205,8 +236,6 @@ impl CandidateState {
             // Schedule safe window update
             oxi::schedule({
                 let candidate_window = candidate_window.clone();
-                let width = width;
-                let height = height;
                 move |_| {
                     if let Ok(mut window_guard) = candidate_window.lock() {
                         if let Some(window) = window_guard.as_mut() {
@@ -241,8 +270,8 @@ impl CandidateState {
 
         // Add preedit text at the top with better formatting
         if !self.preedit_text.is_empty() {
-            lines.push(format!("  {}", self.preedit_text)); // Add a keyboard icon
-            lines.push("─".repeat((width as usize).saturating_sub(2))); // Clean separator line
+            lines.push(format!("  {}", self.preedit_text));
+            lines.push("─".repeat((width as usize).saturating_sub(2)));
         }
 
         // Add candidates with improved formatting

@@ -90,6 +90,45 @@ impl CandidateState {
         self.is_visible = false;
     }
 
+    /// Calculate the optimal width for the window based on content
+    fn calculate_window_dimensions(&self) -> (u32, u32) {
+        // Start with reasonable defaults
+        let mut width = 30;
+
+        // Calculate width based on content
+        if !self.candidates.is_empty() {
+            // Find the longest candidate text
+            let max_candidate_len = self
+                .candidates
+                .iter()
+                .map(|c| c.display.len() + c.text.len() + 5) // +5 for spacing and indicators
+                .max()
+                .unwrap_or(20);
+
+            // Find longest preedit text
+            let preedit_len = if !self.preedit_text.is_empty() {
+                self.preedit_text.len() + 7 // "Input: " prefix
+            } else {
+                0
+            };
+
+            // Set width to max of candidate length or preedit length, plus padding
+            width = std::cmp::max(max_candidate_len as u32, preedit_len as u32) + 4;
+            // Ensure width is at least 20 and at most 60 characters
+            width = width.clamp(20, 60);
+        }
+
+        // Calculate height based on number of items plus headers/footers
+        let base_height = if !self.preedit_text.is_empty() { 3 } else { 1 }; // Preedit + separator or just minimal padding
+        let paging_height = if self.has_prev || self.has_next { 2 } else { 0 }; // Paging controls + separator
+
+        // Calculate total height
+        let height =
+            (base_height + self.candidates.len() as u32 + paging_height).clamp(3, 15);
+
+        (width, height)
+    }
+
     /// Setup the candidate window
     pub fn setup_window(&mut self) -> oxi::Result<()> {
         // Check if we already have a buffer
@@ -99,26 +138,34 @@ impl CandidateState {
         }
 
         // Make sure the buffer exists
-        let buffer = self.buffer_id.as_ref().unwrap().clone();
+        let mut buffer = self.buffer_id.as_ref().unwrap().clone();
+
+        // Set buffer options for better appearance
+        buffer.set_option("bufhidden", "hide")?;
+        buffer.set_option("filetype", "fcitx5candidates")?;
+
+        // Calculate optimal window dimensions based on content
+        let (width, height) = self.calculate_window_dimensions();
 
         // Create the floating window for candidates if needed
         let candidate_window = get_candidate_window();
         let candidate_window_guard = candidate_window.lock().unwrap();
         if candidate_window_guard.is_none() {
-            // Create window options
+            // Create window options with improved appearance
             let opts = WindowConfig::builder()
                 .relative(WindowRelativeTo::Cursor)
-                .row(1)
+                .row(1) // Position just below cursor
                 .col(0)
-                .width(30)
-                .height(10)
+                .width(width)
+                .height(height)
                 .focusable(false)
                 .border(WindowBorder::Rounded)
                 .title(WindowTitle::SimpleString(
-                    "Fcitx5 Candidates".to_owned().into(),
+                    " Fcitx5 ".to_owned().into(), // More compact title with spacing
                 ))
                 .title_pos(WindowTitlePosition::Center)
                 .style(WindowStyle::Minimal)
+                .zindex(50) // Ensure it stays on top
                 .build();
 
             // Open the window with our buffer
@@ -128,12 +175,29 @@ impl CandidateState {
                 move |_| {
                     let mut candidate_window_guard = candidate_window.lock().unwrap();
                     let mut window = api::open_win(&buffer, false, &opts).unwrap();
-                    // Set window options
-                    let _ = window.set_option("winblend", 10);
+
+                    // Enhanced window options
+                    let _ = window.set_option("winblend", 15); // Slight transparency
                     let _ = window.set_option("wrap", true);
+                    let _ = window.set_option("scrolloff", 0);
+                    let _ = window.set_option("sidescrolloff", 0);
+
+                    // Store the window
                     candidate_window_guard.replace(window);
                 }
             });
+        } else {
+            // If window exists, update its dimensions
+            let window_opt = candidate_window_guard.clone();
+            drop(candidate_window_guard);
+
+            if let Some(mut window) = window_opt {
+                if window.is_valid() {
+                    let _ = window.set_config(
+                        &WindowConfig::builder().width(width).height(height).build(),
+                    );
+                }
+            }
         }
 
         Ok(())
@@ -141,40 +205,53 @@ impl CandidateState {
 
     /// Update the candidate window display
     pub fn update_display(&mut self) -> oxi::Result<()> {
-        if let Some(ref mut buffer) = self.buffer_id {
+        if let Some(ref buffer) = self.buffer_id {
+            let mut buffer = buffer.clone();
             // Generate content for the candidate window
             let mut lines = Vec::new();
 
-            // Add preedit text at the top
+            // Add preedit text at the top with better formatting
             if !self.preedit_text.is_empty() {
-                lines.push(format!("Input: {}", self.preedit_text));
-                lines.push("".to_string()); // Empty line as separator
+                lines.push(format!("⌨  {}", self.preedit_text)); // Add a keyboard icon
+                lines.push(
+                    "─".repeat(self.calculate_window_dimensions().0 as usize - 2),
+                ); // Clean separator line
             }
 
-            // Add candidates with proper selection indicator
+            // Add candidates with improved formatting
             for (idx, candidate) in self.candidates.iter().enumerate() {
-                let prefix = if idx == self.selected_index {
-                    "> "
+                let marker = if idx == self.selected_index {
+                    "►" // Triangle marker for selected item
                 } else {
-                    "  "
+                    " " // Aligned space for non-selected
                 };
+
+                // Format with consistent spacing
                 lines.push(format!(
-                    "{}{} {}",
-                    prefix, candidate.display, candidate.text
+                    "{} {:<4} {}",
+                    marker, candidate.display, candidate.text
                 ));
             }
 
-            // Add paging info at the bottom if needed
+            // Add paging info at the bottom with better styling
             if self.has_prev || self.has_next {
-                lines.push("".to_string());
+                lines.push(
+                    "─".repeat(self.calculate_window_dimensions().0 as usize - 2),
+                ); // Clean separator
 
-                let mut paging =
-                    if self.has_prev { "< Prev " } else { "       " }.to_owned();
-                if self.has_next {
-                    paging.push_str("Next >");
-                }
+                let prev_indicator = if self.has_prev { "◄ Prev" } else { "      " };
+                let next_indicator = if self.has_next { "Next ►" } else { "      " };
 
-                lines.push(paging);
+                // Center the paging controls
+                let total_width = self.calculate_window_dimensions().0 as usize - 2;
+                let paging_text = format!("{}    {}", prev_indicator, next_indicator);
+                let padding = if paging_text.len() < total_width {
+                    (total_width - paging_text.len()) / 2
+                } else {
+                    0
+                };
+
+                lines.push(format!("{}{}", " ".repeat(padding), paging_text));
             }
 
             // Update buffer content
@@ -184,6 +261,18 @@ impl CandidateState {
                         if e.to_string()
                             == r#"Exception("Failed to save undo information")"# => {} // retry
                     _ => break,
+                }
+            }
+
+            // Resize window if necessary
+            let (width, height) = self.calculate_window_dimensions();
+            let candidate_window = get_candidate_window();
+            let mut window_guard = candidate_window.lock().unwrap();
+            if let Some(window) = window_guard.as_mut() {
+                if window.is_valid() {
+                    let _ = window.set_config(
+                        &WindowConfig::builder().width(width).height(height).build(),
+                    );
                 }
             }
         }

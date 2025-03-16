@@ -375,6 +375,10 @@ pub fn setup_candidate_receivers(
                                     preedit_text.push_str(text);
                                 }
 
+                                if let Ok(pos) = args.preedit_cursor.try_into() {
+                                    preedit_text.insert(pos, '│');
+                                }
+
                                 // Update our candidate state
                                 if let Ok(mut guard) = candidate_state.lock() {
                                     guard.update_candidates(&candidates);

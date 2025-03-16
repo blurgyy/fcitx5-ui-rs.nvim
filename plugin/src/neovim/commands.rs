@@ -45,10 +45,15 @@ fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
     drop(state_guard);
 
     match nvim_keycode.to_lowercase().as_str() {
-        "<bs>" => {
+        key @ ("<bs>" | "<left>" | "<right>") => {
             let state_guard = state.lock().unwrap();
             let ctx = state_guard.ctx.as_ref().unwrap();
-            let key_code = Fcitx5KeyVal::DELETE;
+            let key_code = match key {
+                "<bs>" => Fcitx5KeyVal::DELETE,
+                "<left>" => Fcitx5KeyVal::LEFT,
+                "<right>" => Fcitx5KeyVal::RIGHT,
+                _ => unreachable!(),
+            };
             let key_state = Fcitx5KeyState::NoState;
             ctx.process_key_event(key_code, 0, key_state, false, 0)
                 .map_err(as_api_error)?;
@@ -57,7 +62,7 @@ fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
             drop(candidate_guard);
             drop(state_guard);
             process_candidate_updates(get_candidate_state())?;
-            Ok::<_, oxi::Error>(())
+            Ok(())
         }
         "<cr>" => {
             let state_guard = state.lock().unwrap();
@@ -79,7 +84,7 @@ fn handle_special_key(nvim_keycode: &str, the_char: char) -> oxi::Result<()> {
             oxi::schedule(move |_| process_candidate_updates(get_candidate_state()));
             Ok(())
         }
-        _ => Ok::<_, oxi::Error>(()),
+        _ => Ok(()),
     }
 }
 
@@ -203,6 +208,18 @@ pub fn register_commands() -> oxi::Result<()> {
     api::create_user_command(
         "Fcitx5TryInsertEscape",
         move |_| handle_special_key("<Esc>", '\x1b'),
+        &CreateCommandOpts::default(),
+    )?;
+
+    api::create_user_command(
+        "Fcitx5TryInsertLeft",
+        move |_| handle_special_key("<Left>", '\x1b'),
+        &CreateCommandOpts::default(),
+    )?;
+
+    api::create_user_command(
+        "Fcitx5TryInsertRight",
+        move |_| handle_special_key("<Right>", '\x1b'),
         &CreateCommandOpts::default(),
     )?;
 

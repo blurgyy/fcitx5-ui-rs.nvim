@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::plugin::{get_state, PLUGIN_NAME};
 
+use super::commands::toggle_plugin;
+
 #[derive(Clone, Deserialize, Serialize)]
 pub struct PluginConfig {
     #[serde(default)]
@@ -76,22 +78,33 @@ pub fn setup(config: PluginConfig) -> bool {
     }
 
     if let Some(on_key) = config.on_key {
-        let mut buf = api::get_current_buf();
-        match buf
-            .set_keymap(
-                api::types::Mode::Normal,
+        match api::set_keymap(
+            api::types::Mode::Normal,
+            &on_key,
+            "",
+            &SetKeymapOpts::builder()
+                .noremap(true)
+                .silent(true)
+                .callback(move |_| {
+                    toggle_plugin(get_state(), &api::get_current_buf().handle())
+                })
+                .build(),
+        )
+        .and_then(|_| {
+            eprintln!("We are setting up insert unload keymap");
+            api::set_keymap(
+                api::types::Mode::Insert,
                 &on_key,
-                "<Cmd>Fcitx5PluginToggle<CR>",
-                &SetKeymapOpts::builder().noremap(true).silent(true).build(),
+                "",
+                &SetKeymapOpts::builder()
+                    .noremap(true)
+                    .silent(true)
+                    .callback(move |_| {
+                        toggle_plugin(get_state(), &api::get_current_buf().handle())
+                    })
+                    .build(),
             )
-            .and_then(|_| {
-                buf.set_keymap(
-                    api::types::Mode::Insert,
-                    &on_key,
-                    "<Cmd>Fcitx5PluginToggle<CR>",
-                    &SetKeymapOpts::builder().noremap(true).silent(true).build(),
-                )
-            }) {
+        }) {
             Err(e) => {
                 oxi::print!(
                     "{PLUGIN_NAME}: Could not setup default enable keymap for '{on_key}': {e}"
@@ -109,7 +122,7 @@ pub fn setup(config: PluginConfig) -> bool {
 pub fn get_im(_: ()) -> oxi::String {
     let state = get_state();
     let state_guard = state.lock().unwrap();
-    if let Ok(im) = state_guard.get_im() {
+    if let Ok(im) = state_guard.get_im(&api::get_current_buf().handle()) {
         im.into()
     } else {
         "".into()

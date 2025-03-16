@@ -7,11 +7,14 @@ use nvim_oxi::{
 
 use crate::plugin::Fcitx5Plugin;
 
-pub fn register_keymaps(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
+pub fn register_keymaps(
+    state: Arc<Mutex<Fcitx5Plugin>>,
+    bufnr: &i32,
+) -> oxi::Result<()> {
     let state_guard = state.lock().unwrap();
 
     // Only proceed if initialized
-    if !state_guard.initialized() {
+    if !state_guard.initialized(bufnr) {
         return Ok(());
     }
 

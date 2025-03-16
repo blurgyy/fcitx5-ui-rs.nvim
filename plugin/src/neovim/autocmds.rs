@@ -20,12 +20,13 @@ use std::sync::{Arc, Mutex};
 pub fn register_autocommands(
     state: Arc<Mutex<Fcitx5Plugin>>,
     trigger: AsyncHandle,
+    bufnr: &i32,
 ) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
     // If already registered, clean up first
-    if let Some(augroup_id) = state_guard.augroup_id {
-        api::del_augroup_by_id(augroup_id)?;
+    if let Some(augroup_id) = state_guard.augroup_id.get(&bufnr) {
+        api::del_augroup_by_id(*augroup_id)?;
     }
 
     // Create augroup for our autocommands
@@ -33,26 +34,26 @@ pub fn register_autocommands(
         "fcitx5-ui-rs-nvim",
         &CreateAugroupOpts::builder().clear(true).build(),
     )?;
-    state_guard.augroup_id = Some(augroup_id);
+    state_guard.augroup_id.insert(*bufnr, augroup_id);
 
     // Ensure we have controller and ctx
     let ctx = state_guard
         .ctx
-        .as_ref()
-        .expect("Input context not initialized");
+        .get(bufnr)
+        .expect("Input context not initialized"); // FIXME: we probably do not want to panic here
 
     let opts = CreateAutocmdOpts::builder()
-        .buffer(Buffer::current())
         .group(augroup_id)
         .desc("Switch to Pinyin input method when entering insert mode")
         .callback({
             let state_ref = state.clone();
+            let bufnr = bufnr.to_owned();
             move |_| {
                 let state_guard = state_ref.lock().unwrap();
-                if !state_guard.initialized() {
+                if !state_guard.initialized(&bufnr) {
                     return Ok(false);
                 }
-                ignore_dbus_no_interface_error!(state_guard.activate_im());
+                ignore_dbus_no_interface_error!(state_guard.activate_im(&bufnr));
                 Ok::<_, OxiError>(false) // NB: return false to keep this autocmd
             }
         })
@@ -60,17 +61,17 @@ pub fn register_autocommands(
     api::create_autocmd(["InsertEnter"], &opts)?;
 
     let opts = CreateAutocmdOpts::builder()
-        .buffer(Buffer::current())
         .group(augroup_id)
         .desc("Switch to English input method when leaving insert mode")
         .callback({
             let state_ref = state.clone();
+            let bufnr = bufnr.to_owned();
             move |_| {
                 let state_guard = state_ref.lock().unwrap();
-                if !state_guard.initialized() {
+                if !state_guard.initialized(&bufnr) {
                     return Ok(false);
                 }
-                ignore_dbus_no_interface_error!(state_guard.deactivate_im());
+                ignore_dbus_no_interface_error!(state_guard.deactivate_im(&bufnr));
                 Ok::<_, OxiError>(false) // NB: return false to keep this autocmd
             }
         })
@@ -84,9 +85,10 @@ pub fn register_autocommands(
         .callback({
             let ctx_clone = ctx.clone();
             let state_ref = state.clone();
+            let bufnr = bufnr.to_owned();
             move |_| {
                 let state_guard = state_ref.lock().unwrap();
-                if !state_guard.initialized() {
+                if !state_guard.initialized(&bufnr) {
                     return Ok(false);
                 }
                 ctx_clone.reset().map_err(as_api_error)?;
@@ -100,14 +102,17 @@ pub fn register_autocommands(
     drop(state_guard);
 
     // Set up the InsertCharPre event handler
-    setup_insert_char_pre(trigger.clone())?;
+    setup_insert_char_pre(trigger.clone(), bufnr)?;
 
     Ok(())
 }
 
-pub fn deregister_autocommands(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
+pub fn deregister_autocommands(
+    state: Arc<Mutex<Fcitx5Plugin>>,
+    bufnr: &i32,
+) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
-    if let Some(augroup_id) = state_guard.augroup_id.take() {
+    if let Some(augroup_id) = state_guard.augroup_id.remove(bufnr) {
         api::del_augroup_by_id(augroup_id).map_err(|e| e.into())
     } else {
         Ok(())
@@ -115,19 +120,21 @@ pub fn deregister_autocommands(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<(
 }
 
 /// Setup InsertCharPre event to handle candidate selection
-pub fn setup_insert_char_pre(trigger: AsyncHandle) -> oxi::Result<()> {
+pub fn setup_insert_char_pre(trigger: AsyncHandle, bufnr: &i32) -> oxi::Result<()> {
     let state = get_state();
     let state_guard = state.lock().unwrap();
 
     // Only proceed if initialized
-    if !state_guard.initialized() {
+    if !state_guard.initialized(bufnr) {
         return Ok(());
     }
 
     let augroup_id = state_guard
         .augroup_id
-        .expect("Augroup should be initialized");
-    let ctx_clone = state_guard.ctx.as_ref().unwrap().clone();
+        .get(bufnr)
+        .expect("Augroup should be initialized")
+        .to_owned();
+    let ctx_clone = state_guard.ctx.get(bufnr).unwrap().clone();
 
     // Drop lock before creating autocmd
     drop(state_guard);
@@ -136,6 +143,7 @@ pub fn setup_insert_char_pre(trigger: AsyncHandle) -> oxi::Result<()> {
     let candidate_state = get_candidate_state();
 
     let opts = CreateAutocmdOpts::builder()
+        .buffer(Buffer::current())
         .group(augroup_id)
         .desc("Process key events for Fcitx5 input method")
         .callback(move |_| {

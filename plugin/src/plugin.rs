@@ -4,6 +4,7 @@ use fcitx5_dbus::controller::ControllerProxyBlocking;
 use fcitx5_dbus::input_context::InputContextProxyBlocking;
 use fcitx5_dbus::zbus::Result;
 use nvim_oxi as oxi;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::fcitx5::candidates::CandidateState;
@@ -14,8 +15,10 @@ use crate::utils::as_api_error;
 pub struct Fcitx5Plugin {
     pub config: Option<PluginConfig>,
     pub controller: Option<ControllerProxyBlocking<'static>>,
-    pub ctx: Option<InputContextProxyBlocking<'static>>,
-    pub augroup_id: Option<u32>,
+    /// Per-buffer input context
+    pub ctx: HashMap<i32, InputContextProxyBlocking<'static>>,
+    /// Per-buffer augroup_id
+    pub augroup_id: HashMap<i32, u32>,
     pub candidate_state: Arc<Mutex<CandidateState>>,
     pub candidate_window: Arc<Mutex<Option<nvim_oxi::api::Window>>>,
 }
@@ -25,26 +28,26 @@ impl Fcitx5Plugin {
         Self {
             config: None,
             controller: None,
-            ctx: None,
-            augroup_id: None,
+            ctx: HashMap::new(),
+            augroup_id: HashMap::new(),
             candidate_state: Arc::new(Mutex::new(CandidateState::new())),
             candidate_window: Arc::new(Mutex::new(None)),
         }
     }
 
-    pub fn initialized(&self) -> bool {
-        self.controller.is_some() && self.ctx.is_some()
+    pub fn initialized(&self, bufnr: &i32) -> bool {
+        self.controller.is_some() && self.ctx.get(bufnr).is_some()
     }
 
-    pub fn reset_im_ctx(&self) -> Result<()> {
-        if let Some(ctx) = self.ctx.as_ref() {
+    pub fn reset_im_ctx(&self, bufnr: &i32) -> Result<()> {
+        if let Some(ctx) = self.ctx.get(bufnr) {
             ctx.reset()?;
         }
         Ok(())
     }
 
-    pub fn get_im(&self) -> oxi::Result<String> {
-        if self.initialized() {
+    pub fn get_im(&self, bufnr: &i32) -> oxi::Result<String> {
+        if self.initialized(bufnr) {
             self.controller
                 .as_ref()
                 .unwrap()
@@ -58,9 +61,9 @@ impl Fcitx5Plugin {
         }
     }
 
-    pub fn toggle_im(&self) -> Result<()> {
+    pub fn toggle_im(&self, bufnr: &i32) -> Result<()> {
         if let (Some(controller), Some(ctx)) =
-            (self.controller.as_ref(), self.ctx.as_ref())
+            (self.controller.as_ref(), self.ctx.get(bufnr))
         {
             ctx.focus_in()?;
             controller.toggle()?;
@@ -68,10 +71,10 @@ impl Fcitx5Plugin {
         Ok(())
     }
 
-    pub fn activate_im(&self) -> Result<()> {
+    pub fn activate_im(&self, bufnr: &i32) -> Result<()> {
         if let (Some(controller), Some(ctx), Some(config)) = (
             self.controller.as_ref(),
-            self.ctx.as_ref(),
+            self.ctx.get(bufnr),
             self.config.as_ref(),
         ) {
             ctx.focus_in()?;
@@ -82,10 +85,10 @@ impl Fcitx5Plugin {
         Ok(())
     }
 
-    pub fn deactivate_im(&self) -> Result<()> {
+    pub fn deactivate_im(&self, bufnr: &i32) -> Result<()> {
         if let (Some(controller), Some(ctx), Some(config)) = (
             self.controller.as_ref(),
-            self.ctx.as_ref(),
+            self.ctx.get(bufnr),
             self.config.as_ref(),
         ) {
             ctx.focus_in()?;

@@ -91,7 +91,6 @@ pub fn setup(config: PluginConfig) -> bool {
                 .build(),
         )
         .and_then(|_| {
-            eprintln!("We are setting up insert unload keymap");
             api::set_keymap(
                 api::types::Mode::Insert,
                 &on_key,

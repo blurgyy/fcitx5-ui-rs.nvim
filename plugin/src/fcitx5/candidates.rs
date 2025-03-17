@@ -123,10 +123,14 @@ impl CandidateState {
                     width = 30;
                 } else if needed_len <= 40 {
                     // For medium text, grow at about 80% of text growth
-                    width = 30 + ((needed_len - 20) as f32 * 0.8) as u32;
+                    width = 30u32.saturating_add(
+                        ((needed_len.saturating_sub(20)) as f32 * 0.8) as u32,
+                    );
                 } else {
                     // For larger text, grow at about 90% rate
-                    width = 46 + ((needed_len - 40) as f32 * 0.9) as u32;
+                    width = 46u32.saturating_add(
+                        ((needed_len.saturating_sub(40)) as f32 * 0.9) as u32,
+                    );
                 }
 
                 // Add minimal padding for aesthetics (reduced from 4 to 2)
@@ -138,9 +142,23 @@ impl CandidateState {
                     if window.is_valid() {
                         if let Ok(config) = window.get_config() {
                             let current_width = config.width.unwrap_or(0);
-                            if (width as i32 - current_width as i32).abs() < 4 {
-                                width = current_width;
-                            }
+                            width = {
+                                let width_i32 = width as i32;
+                                let current_width_i32 = current_width as i32;
+                                if let Some(diff) =
+                                    width_i32.checked_sub(current_width_i32)
+                                {
+                                    if diff.abs() < 4 {
+                                        current_width
+                                    } else {
+                                        width
+                                    }
+                                } else {
+                                    // Handle potential overflow case if the difference can't be calculated
+                                    // This is an edge case where the values are drastically different
+                                    width // Keep the new width
+                                }
+                            };
                         }
                     }
                 }
@@ -151,12 +169,24 @@ impl CandidateState {
         }
 
         // Calculate height based on number of items plus headers/footers
-        let base_height = if !self.preedit_text.is_empty() { 2 } else { 0 }; // Header + separator (or nothing)
-        let paging_height = if self.has_prev || self.has_next { 2 } else { 0 }; // Separator + paging line
+        let base_height = if !self.preedit_text.is_empty() {
+            2u32
+        } else {
+            0u32
+        }; // Header + separator (or nothing)
+        let paging_height = if self.has_prev || self.has_next {
+            2u32
+        } else {
+            0u32
+        }; // Separator + paging line
         let content_height = self.candidates.len() as u32;
 
+        let total_height = base_height
+            .saturating_add(content_height)
+            .saturating_add(paging_height);
+
         // Calculate total height - remove the extra line
-        let height = (base_height + content_height + paging_height).clamp(3, 15);
+        let height = total_height.clamp(3, 15);
 
         (width, height)
     }
@@ -290,7 +320,6 @@ impl CandidateState {
             }
         });
 
-        // Schedule window resizing without complex hysteresis
         oxi::schedule({
             let width = width;
             let height = height;

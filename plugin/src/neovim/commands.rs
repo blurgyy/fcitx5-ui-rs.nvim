@@ -42,7 +42,9 @@ fn handle_special_key(
     let candidate_guard = state_guard.candidate_state.lock().unwrap();
     if !candidate_guard.is_visible {
         // call the original keymap, if there is one
-        if let Some(buf_keymaps) = state_guard.existing_keymaps.get(&buf.handle()) {
+        if let Some(buf_keymaps) =
+            state_guard.existing_keymaps_insert.get(&buf.handle())
+        {
             if let Some(km) = buf_keymaps.get(&nvim_keycode.to_lowercase()) {
                 if let Some(callback) = km.callback.as_ref() {
                     // ignore the error

@@ -16,7 +16,7 @@ use crate::utils::as_api_error;
 
 use config::PluginConfig;
 
-pub type BufferOriginalKeymaps = HashMap<String, KeymapInfos>;
+type BufferOriginalKeymaps = HashMap<String, KeymapInfos>;
 
 // Structure to hold the plugin state
 pub struct Fcitx5Plugin {
@@ -28,7 +28,7 @@ pub struct Fcitx5Plugin {
     pub augroup_id: HashMap<i32, u32>,
     pub candidate_state: Arc<Mutex<CandidateState>>,
     pub candidate_window: Arc<Mutex<Option<nvim_oxi::api::Window>>>,
-    pub existing_keymaps: HashMap<i32, BufferOriginalKeymaps>,
+    pub existing_keymaps_insert: HashMap<i32, BufferOriginalKeymaps>,
 }
 
 impl Fcitx5Plugin {
@@ -40,7 +40,7 @@ impl Fcitx5Plugin {
             augroup_id: HashMap::new(),
             candidate_state: Arc::new(Mutex::new(CandidateState::new())),
             candidate_window: Arc::new(Mutex::new(None)),
-            existing_keymaps: HashMap::new(),
+            existing_keymaps_insert: HashMap::new(),
         }
     }
 
@@ -115,14 +115,15 @@ impl Fcitx5Plugin {
             match km.lhs.to_lowercase().as_ref() {
                 key @ ("<esc>" | "<cr>" | "<bs>" | "<left>" | "<right>") => {
                     let new_buf_keymaps = if let Some(mut buf_keymaps) =
-                        self.existing_keymaps.remove(&buf.handle())
+                        self.existing_keymaps_insert.remove(&buf.handle())
                     {
                         buf_keymaps.insert(key.to_owned(), km);
                         buf_keymaps
                     } else {
                         HashMap::from_iter([(key.to_owned(), km)])
                     };
-                    self.existing_keymaps.insert(buf.handle(), new_buf_keymaps);
+                    self.existing_keymaps_insert
+                        .insert(buf.handle(), new_buf_keymaps);
                 }
                 _ => {}
             }
@@ -131,7 +132,9 @@ impl Fcitx5Plugin {
     }
 
     pub fn restore_existing_keymaps(&mut self, buf: &Buffer) -> oxi::Result<()> {
-        if let Some(mut buf_keymaps) = self.existing_keymaps.remove(&buf.handle()) {
+        if let Some(mut buf_keymaps) =
+            self.existing_keymaps_insert.remove(&buf.handle())
+        {
             for km in buf_keymaps.values_mut() {
                 let mut buf = buf.clone();
                 buf.set_keymap(

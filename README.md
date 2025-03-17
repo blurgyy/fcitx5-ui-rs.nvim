@@ -4,12 +4,12 @@ This plugin allows using the [Fcitx5] input method natively inside Neovim (v0.10
 
 You can now use Fcitx5 remotely in an SSH session!
 
-![demo](https://github.com/user-attachments/assets/2bc3c939-b20d-4160-8787-d8a2ec6d2042)
+![demo](https://github.com/user-attachments/assets/6c500b57-58ab-4ae8-bfca-54ff00755c5f)
 
 <details>
 <summary>See video</summary>
 
-https://github.com/user-attachments/assets/ab39c0ef-dd12-46e5-9677-7c8d928e7f74
+https://github.com/user-attachments/assets/23e34a5a-ae3b-4531-bd3d-8786fbea6695
 
 </details>
 

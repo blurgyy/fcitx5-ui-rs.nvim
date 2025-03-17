@@ -24,6 +24,7 @@ use std::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::plugin::get_candidate_window;
+use crate::utils::CURSOR_INDICATOR;
 
 /// Structure for an input method candidate
 #[derive(Debug, Clone)]
@@ -405,7 +406,7 @@ pub fn setup_candidate_receivers(
                                 }
 
                                 if let Ok(pos) = args.preedit_cursor.try_into() {
-                                    preedit_text.insert(pos, '│');
+                                    preedit_text.insert(pos, CURSOR_INDICATOR);
                                 }
 
                                 // Update our candidate state

@@ -2,6 +2,8 @@
 
 use nvim_oxi::api::Error as ApiError;
 
+pub static CURSOR_INDICATOR: char = '│';
+
 #[macro_export]
 macro_rules! ignore_dbus_no_interface_error {
     ($expr:expr) => {

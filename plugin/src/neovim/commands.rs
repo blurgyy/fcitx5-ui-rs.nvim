@@ -13,7 +13,6 @@ use fcitx5_dbus::utils::key_event::{
     KeyState as Fcitx5KeyState, KeyVal as Fcitx5KeyVal,
 };
 
-use crate::plugin::get_state;
 use crate::{
     fcitx5::candidates::setup_candidate_receivers, ignore_dbus_no_interface_error,
     plugin::get_candidate_state,
@@ -26,6 +25,7 @@ use crate::{
     plugin::Fcitx5Plugin,
 };
 use crate::{plugin::get_candidate_window, utils::as_api_error};
+use crate::{plugin::get_state, utils::CURSOR_INDICATOR};
 
 use super::{
     autocmds::deregister_autocommands,
@@ -72,7 +72,11 @@ fn handle_special_key(
             let state_guard = state.lock().unwrap();
             let candidate_state = state_guard.candidate_state.clone();
             let mut candidate_guard = candidate_state.lock().unwrap();
-            let insert_text = candidate_guard.preedit_text.replace(' ', "").clone();
+            let insert_text = candidate_guard
+                .preedit_text
+                .replace(' ', "")
+                .replace(CURSOR_INDICATOR, "")
+                .clone();
             candidate_guard.mark_for_insert(insert_text);
             ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(&buf));
             drop(candidate_guard);

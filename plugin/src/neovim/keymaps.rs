@@ -11,16 +11,18 @@ pub fn register_keymaps(
     state: Arc<Mutex<Fcitx5Plugin>>,
     buf: &Buffer,
 ) -> oxi::Result<()> {
-    let state_guard = state.lock().unwrap();
+    let mut state_guard = state.lock().unwrap();
 
     // Only proceed if initialized
     if !state_guard.initialized(&buf) {
         return Ok(());
     }
 
-    drop(state_guard);
-
+    // Save existing keymaps for fallback
     let mut buf = api::get_current_buf();
+    state_guard.store_existing_keymaps(&buf)?;
+
+    drop(state_guard);
 
     let opts = SetKeymapOpts::builder().noremap(true).silent(true).build();
     buf.set_keymap(
@@ -61,7 +63,7 @@ pub fn register_keymaps(
     Ok(())
 }
 
-pub fn deregister_keymaps() -> oxi::Result<()> {
+pub fn deregister_keymaps(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
     let mut buf = api::get_current_buf();
 
     buf.del_keymap(api::types::Mode::Insert, "<BS>")?;
@@ -69,6 +71,9 @@ pub fn deregister_keymaps() -> oxi::Result<()> {
     buf.del_keymap(api::types::Mode::Insert, "<Esc>")?;
     buf.del_keymap(api::types::Mode::Insert, "<Left>")?;
     buf.del_keymap(api::types::Mode::Insert, "<Right>")?;
+
+    let mut state_guard = state.lock().unwrap();
+    state_guard.restore_existing_keymaps(&buf)?;
 
     Ok(())
 }

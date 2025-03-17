@@ -4,8 +4,10 @@ pub mod config;
 use fcitx5_dbus::controller::ControllerProxyBlocking;
 use fcitx5_dbus::input_context::InputContextProxyBlocking;
 use fcitx5_dbus::zbus::Result;
-use nvim_oxi as oxi;
-use nvim_oxi::api::Buffer;
+use nvim_oxi::{
+    self as oxi,
+    api::{self, opts::SetKeymapOpts, types::KeymapInfos, Buffer},
+};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -13,6 +15,8 @@ use crate::fcitx5::candidates::CandidateState;
 use crate::utils::as_api_error;
 
 use config::PluginConfig;
+
+pub type BufferOriginalKeymaps = HashMap<String, KeymapInfos>;
 
 // Structure to hold the plugin state
 pub struct Fcitx5Plugin {
@@ -24,6 +28,7 @@ pub struct Fcitx5Plugin {
     pub augroup_id: HashMap<i32, u32>,
     pub candidate_state: Arc<Mutex<CandidateState>>,
     pub candidate_window: Arc<Mutex<Option<nvim_oxi::api::Window>>>,
+    pub existing_keymaps: HashMap<i32, BufferOriginalKeymaps>,
 }
 
 impl Fcitx5Plugin {
@@ -35,6 +40,7 @@ impl Fcitx5Plugin {
             augroup_id: HashMap::new(),
             candidate_state: Arc::new(Mutex::new(CandidateState::new())),
             candidate_window: Arc::new(Mutex::new(None)),
+            existing_keymaps: HashMap::new(),
         }
     }
 
@@ -99,6 +105,52 @@ impl Fcitx5Plugin {
             ctx.focus_in()?;
             if controller.current_input_method()? != *config.im_inactive {
                 controller.toggle()?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn store_existing_keymaps(&mut self, buf: &Buffer) -> oxi::Result<()> {
+        for km in buf.get_keymap(api::types::Mode::Insert)? {
+            match km.lhs.to_lowercase().as_ref() {
+                key @ ("<esc>" | "<cr>" | "<bs>" | "<left>" | "<right>") => {
+                    let new_buf_keymaps = if let Some(mut buf_keymaps) =
+                        self.existing_keymaps.remove(&buf.handle())
+                    {
+                        buf_keymaps.insert(key.to_owned(), km);
+                        buf_keymaps
+                    } else {
+                        HashMap::from_iter([(key.to_owned(), km)])
+                    };
+                    self.existing_keymaps.insert(buf.handle(), new_buf_keymaps);
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    pub fn restore_existing_keymaps(&mut self, buf: &Buffer) -> oxi::Result<()> {
+        if let Some(mut buf_keymaps) = self.existing_keymaps.remove(&buf.handle()) {
+            for km in buf_keymaps.values_mut() {
+                let mut buf = buf.clone();
+                buf.set_keymap(
+                    api::types::Mode::Insert,
+                    &km.lhs,
+                    &km.rhs.as_ref().unwrap_or(&"".to_string()),
+                    {
+                        let mut builder = SetKeymapOpts::builder();
+                        let mut builder = builder
+                            .expr(km.expr)
+                            .nowait(km.nowait)
+                            .noremap(km.noremap)
+                            .silent(km.silent);
+                        if let Some(callback) = km.callback.take() {
+                            builder = builder.callback(callback);
+                        }
+                        &builder.build()
+                    },
+                )?;
             }
         }
         Ok(())

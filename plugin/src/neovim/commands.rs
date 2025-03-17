@@ -41,7 +41,40 @@ fn handle_special_key(
     let state_guard = state.lock().unwrap();
     let candidate_guard = state_guard.candidate_state.lock().unwrap();
     if !candidate_guard.is_visible {
-        api::feedkeys(&the_char.to_string(), api::types::Mode::Normal, true);
+        // call the original keymap, if there is one
+        if let Some(buf_keymaps) = state_guard.existing_keymaps.get(&buf.handle()) {
+            if let Some(km) = buf_keymaps.get(&nvim_keycode.to_lowercase()) {
+                if let Some(callback) = km.callback.as_ref() {
+                    // ignore the error
+                    match callback.call(()) {
+                        Ok(()) => {}
+                        Err(_) => {
+                            // fallback to vanilla key input
+                            api::feedkeys(
+                                &the_char.to_string(),
+                                api::types::Mode::Normal,
+                                true,
+                            );
+                        }
+                    }
+                }
+            } else {
+                // oxi::print!(
+                //     "{}: no existing keymaps of key '{}' for current buffer ({})",
+                //     PLUGIN_NAME,
+                //     nvim_keycode,
+                //     buf.handle(),
+                // );
+                api::feedkeys(&the_char.to_string(), api::types::Mode::Normal, true);
+            }
+        } else {
+            // oxi::print!(
+            //     "{}: warning: existing keymaps for current buffer ({}) is not registered",
+            //     PLUGIN_NAME,
+            //     buf.handle(),
+            // );
+            api::feedkeys(&the_char.to_string(), api::types::Mode::Normal, true);
+        }
         return Ok(());
     }
 
@@ -348,8 +381,8 @@ pub fn unload_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Resu
     drop(state_guard);
 
     // Delete the augroup if it exists
-    deregister_autocommands(state, &buf)?;
-    deregister_keymaps()?;
+    deregister_autocommands(state.clone(), &buf)?;
+    deregister_keymaps(state)?;
     Ok(())
 }
 

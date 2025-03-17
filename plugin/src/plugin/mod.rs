@@ -1,4 +1,5 @@
 //! Plugin state management
+pub mod config;
 
 use fcitx5_dbus::controller::ControllerProxyBlocking;
 use fcitx5_dbus::input_context::InputContextProxyBlocking;
@@ -9,8 +10,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::fcitx5::candidates::CandidateState;
-use crate::neovim::functions::PluginConfig;
 use crate::utils::as_api_error;
+
+use config::PluginConfig;
 
 // Structure to hold the plugin state
 pub struct Fcitx5Plugin {

@@ -85,9 +85,7 @@ pub fn setup(config: PluginConfig) -> bool {
             &SetKeymapOpts::builder()
                 .noremap(true)
                 .silent(true)
-                .callback(move |_| {
-                    toggle_plugin(get_state(), &api::get_current_buf().handle())
-                })
+                .callback(move |_| toggle_plugin(get_state(), &api::get_current_buf()))
                 .build(),
         )
         .and_then(|_| {
@@ -99,7 +97,7 @@ pub fn setup(config: PluginConfig) -> bool {
                     .noremap(true)
                     .silent(true)
                     .callback(move |_| {
-                        toggle_plugin(get_state(), &api::get_current_buf().handle())
+                        toggle_plugin(get_state(), &api::get_current_buf())
                     })
                     .build(),
             )
@@ -121,7 +119,7 @@ pub fn setup(config: PluginConfig) -> bool {
 pub fn get_im(_: ()) -> oxi::String {
     let state = get_state();
     let state_guard = state.lock().unwrap();
-    if let Ok(im) = state_guard.get_im(&api::get_current_buf().handle()) {
+    if let Ok(im) = state_guard.get_im(&api::get_current_buf()) {
         im.into()
     } else {
         "".into()

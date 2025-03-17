@@ -2,19 +2,19 @@ use std::sync::{Arc, Mutex};
 
 use nvim_oxi::{
     self as oxi,
-    api::{self, opts::SetKeymapOpts},
+    api::{self, opts::SetKeymapOpts, Buffer},
 };
 
 use crate::plugin::Fcitx5Plugin;
 
 pub fn register_keymaps(
     state: Arc<Mutex<Fcitx5Plugin>>,
-    bufnr: &i32,
+    buf: &Buffer,
 ) -> oxi::Result<()> {
     let state_guard = state.lock().unwrap();
 
     // Only proceed if initialized
-    if !state_guard.initialized(bufnr) {
+    if !state_guard.initialized(&buf) {
         return Ok(());
     }
 

@@ -2,7 +2,7 @@
 
 use nvim_oxi::{
     self as oxi,
-    api::{self, opts::CreateCommandOpts},
+    api::{self, opts::CreateCommandOpts, Buffer},
     libuv::AsyncHandle,
 };
 
@@ -35,7 +35,7 @@ use super::{
 fn handle_special_key(
     nvim_keycode: &str,
     the_char: char,
-    bufnr: &i32,
+    buf: &Buffer,
 ) -> oxi::Result<()> {
     let state = get_state();
     let state_guard = state.lock().unwrap();
@@ -51,7 +51,7 @@ fn handle_special_key(
     match nvim_keycode.to_lowercase().as_str() {
         key @ ("<bs>" | "<left>" | "<right>") => {
             let state_guard = state.lock().unwrap();
-            let ctx = state_guard.ctx.get(bufnr).unwrap();
+            let ctx = state_guard.ctx.get(&buf.handle()).unwrap();
             let key_code = match key {
                 "<bs>" => Fcitx5KeyVal::DELETE,
                 "<left>" => Fcitx5KeyVal::LEFT,
@@ -74,7 +74,7 @@ fn handle_special_key(
             let mut candidate_guard = candidate_state.lock().unwrap();
             let insert_text = candidate_guard.preedit_text.replace(' ', "").clone();
             candidate_guard.mark_for_insert(insert_text);
-            ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(bufnr));
+            ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(&buf));
             drop(candidate_guard);
             oxi::schedule({
                 let candidate_state = candidate_state.clone();
@@ -84,7 +84,7 @@ fn handle_special_key(
         }
         "<esc>" => {
             let state_guard = state.lock().unwrap();
-            ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(bufnr));
+            ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(&buf));
             oxi::schedule(move |_| process_candidate_updates(get_candidate_state()));
             Ok(())
         }
@@ -99,7 +99,7 @@ pub fn register_commands() -> oxi::Result<()> {
     // Define user commands
     api::create_user_command(
         "Fcitx5PluginLoad",
-        move |_| load_plugin(get_state(), &api::get_current_buf().handle()),
+        move |_| load_plugin(get_state(), &api::get_current_buf()),
         &CreateCommandOpts::builder()
             .desc("Setup input method auto-activation")
             .build(),
@@ -107,7 +107,7 @@ pub fn register_commands() -> oxi::Result<()> {
 
     api::create_user_command(
         "Fcitx5PluginUnload",
-        move |_| unload_plugin(get_state(), &api::get_current_buf().handle()),
+        move |_| unload_plugin(get_state(), &api::get_current_buf()),
         &CreateCommandOpts::builder()
             .desc("Disable input method auto-activation")
             .build(),
@@ -115,7 +115,7 @@ pub fn register_commands() -> oxi::Result<()> {
 
     api::create_user_command(
         "Fcitx5PluginToggle",
-        move |_| toggle_plugin(get_state(), &api::get_current_buf().handle()),
+        move |_| toggle_plugin(get_state(), &api::get_current_buf()),
         &CreateCommandOpts::builder()
             .desc("Toggle input method auto-activation")
             .build(),
@@ -128,17 +128,17 @@ pub fn register_commands() -> oxi::Result<()> {
             let state = state.clone();
             move |_| {
                 let state_guard = state.lock().unwrap();
-                let bufnr = api::get_current_buf().handle();
-                if !state_guard.initialized(&bufnr) {
+                let buf = api::get_current_buf();
+                if !state_guard.initialized(&buf) {
                     return Err(as_api_error(IoError::new(
                         ErrorKind::Other,
                         "Fcitx5 plugin not loaded. Run :Fcitx5PluginLoad first",
                     )));
                 }
 
-                ignore_dbus_no_interface_error!(state_guard.toggle_im(&bufnr));
+                ignore_dbus_no_interface_error!(state_guard.toggle_im(&buf));
 
-                oxi::print!("{}", state_guard.get_im(&bufnr).map_err(as_api_error)?);
+                oxi::print!("{}", state_guard.get_im(&buf).map_err(as_api_error)?);
 
                 Ok(())
             }
@@ -154,15 +154,15 @@ pub fn register_commands() -> oxi::Result<()> {
             let state = state.clone();
             move |_| {
                 let state_guard = state.lock().unwrap();
-                let bufnr = api::get_current_buf().handle();
-                if !state_guard.initialized(&bufnr) {
+                let buf = api::get_current_buf();
+                if !state_guard.initialized(&buf) {
                     return Err(as_api_error(IoError::new(
                         ErrorKind::Other,
                         "Fcitx5 plugin not loaded. Run :Fcitx5PluginLoad first",
                     )));
                 }
 
-                ignore_dbus_no_interface_error!(state_guard.activate_im(&bufnr));
+                ignore_dbus_no_interface_error!(state_guard.activate_im(&buf));
                 Ok(())
             }
         },
@@ -175,15 +175,15 @@ pub fn register_commands() -> oxi::Result<()> {
             let state = state.clone();
             move |_| {
                 let state_guard = state.lock().unwrap();
-                let bufnr = api::get_current_buf().handle();
-                if !state_guard.initialized(&bufnr) {
+                let buf = api::get_current_buf();
+                if !state_guard.initialized(&buf) {
                     return Err(as_api_error(IoError::new(
                         ErrorKind::Other,
                         "Fcitx5 plugin not loaded. Run :Fcitx5PluginLoad first",
                     )));
                 }
 
-                ignore_dbus_no_interface_error!(state_guard.deactivate_im(&bufnr));
+                ignore_dbus_no_interface_error!(state_guard.deactivate_im(&buf));
                 Ok(())
             }
         },
@@ -192,33 +192,31 @@ pub fn register_commands() -> oxi::Result<()> {
 
     api::create_user_command(
         "Fcitx5TryInsertBackSpace",
-        move |_| handle_special_key("<BS>", '\x08', &api::get_current_buf().handle()),
+        move |_| handle_special_key("<BS>", '\x08', &api::get_current_buf()),
         &CreateCommandOpts::default(),
     )?;
 
     api::create_user_command(
         "Fcitx5TryInsertCarriageReturn",
-        move |_| handle_special_key("<CR>", '\n', &api::get_current_buf().handle()),
+        move |_| handle_special_key("<CR>", '\n', &api::get_current_buf()),
         &CreateCommandOpts::default(),
     )?;
 
     api::create_user_command(
         "Fcitx5TryInsertEscape",
-        move |_| handle_special_key("<Esc>", '\x1b', &api::get_current_buf().handle()),
+        move |_| handle_special_key("<Esc>", '\x1b', &api::get_current_buf()),
         &CreateCommandOpts::default(),
     )?;
 
     api::create_user_command(
         "Fcitx5TryInsertLeft",
-        move |_| handle_special_key("<Left>", '\x1b', &api::get_current_buf().handle()),
+        move |_| handle_special_key("<Left>", '\x1b', &api::get_current_buf()),
         &CreateCommandOpts::default(),
     )?;
 
     api::create_user_command(
         "Fcitx5TryInsertRight",
-        move |_| {
-            handle_special_key("<Right>", '\x1b', &api::get_current_buf().handle())
-        },
+        move |_| handle_special_key("<Right>", '\x1b', &api::get_current_buf()),
         &CreateCommandOpts::default(),
     )?;
 
@@ -282,10 +280,10 @@ pub fn process_candidate_updates(
 }
 
 /// Initialize the connection and input context for current buffer
-pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, bufnr: &i32) -> oxi::Result<()> {
+pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
-    if state_guard.initialized(bufnr) {
+    if state_guard.initialized(&buf) {
         oxi::print!("Fcitx5 plugin already loaded");
         return Ok(());
     }
@@ -297,9 +295,11 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, bufnr: &i32) -> oxi::Result<
     let candidate_state = state_guard.candidate_state.clone();
 
     // Store in state
-    state_guard.controller = Some(controller.clone());
-    state_guard.ctx.insert(*bufnr, ctx.clone());
-    ignore_dbus_no_interface_error!(state_guard.deactivate_im(&bufnr));
+    state_guard
+        .controller
+        .insert(buf.handle(), controller.clone());
+    state_guard.ctx.insert(buf.handle(), ctx.clone());
+    ignore_dbus_no_interface_error!(state_guard.deactivate_im(&buf));
 
     let trigger =
         AsyncHandle::new(move || process_candidate_updates(get_candidate_state()))?;
@@ -311,7 +311,7 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, bufnr: &i32) -> oxi::Result<
     // if already in insert mode, set the im
     if let Ok(got_mode) = api::get_mode() {
         if got_mode.mode == api::types::Mode::Insert {
-            ignore_dbus_no_interface_error!(state_guard.activate_im(&bufnr));
+            ignore_dbus_no_interface_error!(state_guard.activate_im(&buf));
         }
     }
 
@@ -319,48 +319,43 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, bufnr: &i32) -> oxi::Result<
     drop(state_guard);
 
     // Setup autocommands
-    register_autocommands(state.clone(), trigger, &bufnr)?;
+    register_autocommands(state.clone(), trigger, &buf)?;
 
-    register_keymaps(state.clone(), &bufnr)?;
+    register_keymaps(state.clone(), &buf)?;
 
     Ok(())
 }
 
 /// Reset the plugin for current buffer completely - close connections and clean up state
-pub fn unload_plugin(state: Arc<Mutex<Fcitx5Plugin>>, bufnr: &i32) -> oxi::Result<()> {
-    let state_guard = state.lock().unwrap();
+pub fn unload_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result<()> {
+    let mut state_guard = state.lock().unwrap();
 
-    if !state_guard.initialized(&bufnr) && state_guard.controller.is_none() {
+    if !state_guard.initialized(&buf) {
         oxi::print!("Fcitx5 plugin already unloaded");
         return Ok(());
     }
 
     // Reset and clear the input context if it exists
-    ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(&bufnr));
+    ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(&buf));
 
-    // Clear state
-    // state_guard.controller = None;
-    state_guard
-        .ctx
-        .get(bufnr)
-        .and_then(|ic| ic.destroy_ic().ok());
+    state_guard.controller.remove(&buf.handle());
+    state_guard.ctx.remove(&buf.handle());
 
     drop(state_guard);
 
     // Delete the augroup if it exists
-    deregister_autocommands(state, &bufnr)?;
+    deregister_autocommands(state, &buf)?;
     deregister_keymaps()?;
-
     Ok(())
 }
 
-pub fn toggle_plugin(state: Arc<Mutex<Fcitx5Plugin>>, bufnr: &i32) -> oxi::Result<()> {
+pub fn toggle_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result<()> {
     let state_guard = state.lock().unwrap();
-    if state_guard.initialized(bufnr) {
+    if state_guard.initialized(buf) {
         drop(state_guard);
-        unload_plugin(get_state(), bufnr)
+        unload_plugin(get_state(), buf)
     } else {
         drop(state_guard);
-        load_plugin(get_state(), bufnr)
+        load_plugin(get_state(), buf)
     }
 }

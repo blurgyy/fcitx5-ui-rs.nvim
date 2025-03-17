@@ -31,7 +31,7 @@ pub fn register_autocommands(
 
     // Create augroup for our autocommands
     let augroup_id = api::create_augroup(
-        "fcitx5-ui-rs-nvim",
+        &format!("fcitx5-ui-rs-nvim-buf#{}", bufnr),
         &CreateAugroupOpts::builder().clear(true).build(),
     )?;
     state_guard.augroup_id.insert(*bufnr, augroup_id);

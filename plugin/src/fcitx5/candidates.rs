@@ -236,7 +236,20 @@ impl CandidateState {
                             // Set window options
                             let _ = window.set_option("winblend", 15);
                             let _ = window.set_option("wrap", true);
-                            candidate_window_guard.replace(window);
+                            if let Some(old_window) =
+                                candidate_window_guard.replace(window)
+                            {
+                                if old_window.is_valid() {
+                                    oxi::schedule(move |_| {
+                                        match old_window.close(true) {
+                                            Ok(_) => {}
+                                            Err(e) => {
+                                                eprintln!("Error closing window: {}", e)
+                                            }
+                                        }
+                                    });
+                                }
+                            }
                         }
                         Err(e) => eprintln!("Error creating window: {}", e),
                     }

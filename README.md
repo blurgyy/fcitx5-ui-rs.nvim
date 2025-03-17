@@ -89,8 +89,6 @@ dbus.
 
 ## Known Problem
 
-- Sometimes the candidate window does not close if typing very quickly.  Use <kbd>\<C-w\>
-  o</kbd> to close all non-current window if this happens.
 - Special characters like `#`, <code>\`</code>, `*`, etc. are inserted after space, if
   they are selected with a space key.
 

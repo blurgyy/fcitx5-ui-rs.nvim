@@ -49,7 +49,7 @@ pub struct CandidateState {
     /// Index of the currently selected candidate
     pub selected_index: usize,
     /// Buffer ID for the candidate window
-    pub buffer_id: Option<Buffer>,
+    pub buffer: Option<Buffer>,
     /// Current preedit text
     pub preedit_text: String,
     /// Has previous page
@@ -67,7 +67,7 @@ impl CandidateState {
         Self {
             candidates: Vec::new(),
             selected_index: 0,
-            buffer_id: None,
+            buffer: None,
             preedit_text: String::new(),
             has_prev: false,
             has_next: false,
@@ -194,17 +194,18 @@ impl CandidateState {
 
     /// Setup the candidate window
     pub fn setup_window(&mut self) -> oxi::Result<()> {
-        // Check if we already have a buffer
-        if self.buffer_id.is_none() {
-            // Create a new scratch buffer for candidates
-            self.buffer_id = Some(api::create_buf(false, true)?);
-        }
+        // Make sure the buffer exists
+        let buffer = match self.buffer {
+            Some(ref buffer) => buffer.clone(),
+            None => {
+                let buffer = api::create_buf(false, true)?;
+                self.buffer = Some(buffer.clone());
+                buffer
+            }
+        };
 
         // Calculate both width and height for initial setup
         let (width, height) = self.calculate_window_dimensions();
-
-        // Make sure the buffer exists
-        let buffer = self.buffer_id.as_ref().unwrap().clone();
 
         // Create the floating window for candidates if needed
         let candidate_window = get_candidate_window();
@@ -262,11 +263,11 @@ impl CandidateState {
 
     /// Update the candidate window display
     pub fn update_display(&mut self) -> oxi::Result<()> {
-        if self.buffer_id.is_none() {
+        if self.buffer.is_none() {
             return Ok(());
         }
 
-        let buffer = self.buffer_id.as_ref().unwrap().clone();
+        let buffer = self.buffer.as_ref().unwrap().clone();
 
         // Calculate dimensions
         let (width, height) = self.calculate_window_dimensions();

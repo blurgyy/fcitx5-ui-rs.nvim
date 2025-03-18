@@ -335,7 +335,12 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result
     }
 
     // Initialize the connection
-    let (controller, ctx) = prepare().map_err(as_api_error)?;
+    let (controller, ctx) = if let Ok(Some(pair)) = prepare().map_err(as_api_error) {
+        pair
+    } else {
+        oxi::print!("{PLUGIN_NAME}: failed to connect to DBus");
+        return Ok(());
+    };
 
     // Get a reference to the candidate state for setup
     let candidate_state = state_guard.candidate_state.clone();

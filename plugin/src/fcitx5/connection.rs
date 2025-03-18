@@ -8,11 +8,17 @@ use fcitx5_dbus::{
 };
 
 /// Establishes a connection with Fcitx5 and creates an input context
-pub fn prepare() -> Result<(
-    ControllerProxyBlocking<'static>,
-    InputContextProxyBlocking<'static>,
-)> {
-    let conn = Connection::session()?;
+pub fn prepare() -> Result<
+    Option<(
+        ControllerProxyBlocking<'static>,
+        InputContextProxyBlocking<'static>,
+    )>,
+> {
+    let conn = if let Ok(conn) = Connection::session() {
+        conn
+    } else {
+        return Ok(None);
+    };
     let controller = ControllerProxyBlocking::new(&conn)?;
     let input_method = InputMethodProxyBlocking::new(&conn)?;
 
@@ -22,5 +28,5 @@ pub fn prepare() -> Result<(
     let ctx = InputContextProxyBlocking::builder(&conn).path(p)?.build()?;
     ctx.set_capability(CapabilityFlag::ClientSideInputPanel)?;
 
-    Ok((controller, ctx))
+    Ok(Some((controller, ctx)))
 }

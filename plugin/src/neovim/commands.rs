@@ -14,8 +14,9 @@ use fcitx5_dbus::utils::key_event::{
 };
 
 use crate::{
-    fcitx5::candidates::setup_candidate_receivers, ignore_dbus_no_interface_error,
-    plugin::get_candidate_state,
+    fcitx5::candidates::setup_candidate_receivers,
+    ignore_dbus_no_interface_error,
+    plugin::{get_candidate_state, PLUGIN_NAME},
 };
 use crate::{
     fcitx5::candidates::CandidateState, neovim::autocmds::register_autocommands,
@@ -171,7 +172,9 @@ pub fn register_commands() -> oxi::Result<()> {
                 if !state_guard.initialized(&buf) {
                     return Err(as_api_error(IoError::new(
                         ErrorKind::Other,
-                        "Fcitx5 plugin not loaded. Run :Fcitx5PluginLoad first",
+                        format!(
+                            "{PLUGIN_NAME}: not loaded. Run :Fcitx5PluginLoad first"
+                        ),
                     )));
                 }
 
@@ -197,7 +200,9 @@ pub fn register_commands() -> oxi::Result<()> {
                 if !state_guard.initialized(&buf) {
                     return Err(as_api_error(IoError::new(
                         ErrorKind::Other,
-                        "Fcitx5 plugin not loaded. Run :Fcitx5PluginLoad first",
+                        format!(
+                            "{PLUGIN_NAME}: not loaded. Run :Fcitx5PluginLoad first"
+                        ),
                     )));
                 }
 
@@ -218,7 +223,9 @@ pub fn register_commands() -> oxi::Result<()> {
                 if !state_guard.initialized(&buf) {
                     return Err(as_api_error(IoError::new(
                         ErrorKind::Other,
-                        "Fcitx5 plugin not loaded. Run :Fcitx5PluginLoad first",
+                        format!(
+                            "{PLUGIN_NAME}: not loaded. Run :Fcitx5PluginLoad first"
+                        ),
                     )));
                 }
 
@@ -323,7 +330,7 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result
     let mut state_guard = state.lock().unwrap();
 
     if state_guard.initialized(&buf) {
-        oxi::print!("Fcitx5 plugin already loaded");
+        oxi::print!("{PLUGIN_NAME}: already loaded");
         return Ok(());
     }
 
@@ -370,7 +377,7 @@ pub fn unload_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Resu
     let mut state_guard = state.lock().unwrap();
 
     if !state_guard.initialized(&buf) {
-        oxi::print!("Fcitx5 plugin already unloaded");
+        oxi::print!("{PLUGIN_NAME}: already unloaded");
         return Ok(());
     }
 

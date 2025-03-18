@@ -26,7 +26,14 @@ rustPlatform.buildRustPackage {
     [[ "$-" == *i* ]] && exec $(grep -E "^$USER:" /etc/passwd | awk -F: '{ print $NF }')
   '';
 
-  cargoLock.lockFile = ./Cargo.lock;
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+    outputHashes = {
+      # TODO: use upstream again once <https://github.com/noib3/nvim-oxi/issues/226> is
+      # resolved
+      "nvim-oxi-0.5.1" = "sha256-K+XULqfwcCC0b5AHILQT0UXKh3U5h8nA8z8CAmrErjY=";
+    };
+  };
 
   postInstall = ''
     mkdir $out/lua -p

@@ -6,7 +6,15 @@ edition = "2021"
 [dependencies]
 fcitx5-dbus = "0.1.4"
 lazy_static = "1.5.0"
-nvim-oxi = { version = "0.5.1", features = ["libuv", "neovim-0-10"] }
+# Trying to fix a behavior undocumented by nvim
+#   See: <https://github.com/noib3/nvim-oxi/issues/226>
+nvim-oxi = { git = "https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5", features = [
+  "libuv",
+  "neovim-0-10",
+] }
+# TODO: use upstream again once <https://github.com/noib3/nvim-oxi/issues/226> is
+# resolved
+# nvim-oxi = { version = "0.5.1", features = ["libuv", "neovim-0-10"] }
 serde = { version = "1.0.219", features = ["derive"] }
 unicode-width = "0.2.0"
 

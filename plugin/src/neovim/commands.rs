@@ -1,16 +1,14 @@
 //! Command definitions for Neovim plugin
 
+use std::sync::{Arc, Mutex};
+
+use fcitx5_dbus::utils::key_event::{
+    KeyState as Fcitx5KeyState, KeyVal as Fcitx5KeyVal,
+};
 use nvim_oxi::{
     self as oxi,
     api::{self, opts::CreateCommandOpts, Buffer},
     libuv::AsyncHandle,
-};
-
-use std::{io::Error as IoError, sync::Arc};
-use std::{io::ErrorKind, sync::Mutex};
-
-use fcitx5_dbus::utils::key_event::{
-    KeyState as Fcitx5KeyState, KeyVal as Fcitx5KeyVal,
 };
 
 use crate::{
@@ -170,19 +168,17 @@ pub fn register_commands() -> oxi::Result<()> {
                 let state_guard = state.lock().unwrap();
                 let buf = api::get_current_buf();
                 if !state_guard.initialized(&buf) {
-                    return Err(as_api_error(IoError::new(
-                        ErrorKind::Other,
-                        format!(
-                            "{PLUGIN_NAME}: not loaded. Run :Fcitx5PluginLoad first"
-                        ),
-                    )));
+                    oxi::print!(
+                        "{PLUGIN_NAME}: not loaded. Run :Fcitx5PluginLoad first"
+                    );
+                    return Ok(());
                 }
 
                 ignore_dbus_no_interface_error!(state_guard.toggle_im(&buf));
 
                 oxi::print!("{}", state_guard.get_im(&buf).map_err(as_api_error)?);
 
-                Ok(())
+                Ok::<_, oxi::Error>(())
             }
         },
         &CreateCommandOpts::builder()
@@ -198,16 +194,14 @@ pub fn register_commands() -> oxi::Result<()> {
                 let state_guard = state.lock().unwrap();
                 let buf = api::get_current_buf();
                 if !state_guard.initialized(&buf) {
-                    return Err(as_api_error(IoError::new(
-                        ErrorKind::Other,
-                        format!(
-                            "{PLUGIN_NAME}: not loaded. Run :Fcitx5PluginLoad first"
-                        ),
-                    )));
+                    oxi::print!(
+                        "{PLUGIN_NAME}: not loaded. Run :Fcitx5PluginLoad first"
+                    );
+                    return Ok(());
                 }
 
                 ignore_dbus_no_interface_error!(state_guard.activate_im(&buf));
-                Ok(())
+                Ok::<_, oxi::Error>(())
             }
         },
         &CreateCommandOpts::default(),
@@ -221,16 +215,14 @@ pub fn register_commands() -> oxi::Result<()> {
                 let state_guard = state.lock().unwrap();
                 let buf = api::get_current_buf();
                 if !state_guard.initialized(&buf) {
-                    return Err(as_api_error(IoError::new(
-                        ErrorKind::Other,
-                        format!(
-                            "{PLUGIN_NAME}: not loaded. Run :Fcitx5PluginLoad first"
-                        ),
-                    )));
+                    oxi::print!(
+                        "{PLUGIN_NAME}: not loaded. Run :Fcitx5PluginLoad first"
+                    );
+                    return Ok(());
                 }
 
                 ignore_dbus_no_interface_error!(state_guard.deactivate_im(&buf));
-                Ok(())
+                Ok::<_, oxi::Error>(())
             }
         },
         &CreateCommandOpts::default(),

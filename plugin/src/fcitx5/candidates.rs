@@ -245,7 +245,10 @@ impl CandidateState {
                                         match old_window.close(true) {
                                             Ok(_) => {}
                                             Err(e) => {
-                                                eprintln!("Error closing window: {}", e)
+                                                oxi::print!(
+                                                    "Error closing window: {}",
+                                                    e
+                                                );
                                             }
                                         }
                                     });

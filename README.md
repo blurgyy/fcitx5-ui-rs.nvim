@@ -111,7 +111,7 @@ require('lualine').setup(cfg)
 
 ## Limitations
 
-This plugin depends on [Fcitx5]'s DBus frontend, it would not work on a system without
+This plugin depends on Fcitx5's DBus frontend, it would not work on a system without
 DBus.
 
 ## Known Problem

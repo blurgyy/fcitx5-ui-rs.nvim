@@ -382,7 +382,9 @@ pub fn unload_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Resu
     ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(&buf));
 
     state_guard.controller.remove(&buf.handle());
-    state_guard.ctx.remove(&buf.handle());
+    if let Some(ctx) = state_guard.ctx.remove(&buf.handle()) {
+        let _ = ctx.destroy_ic();
+    }
 
     drop(state_guard);
 

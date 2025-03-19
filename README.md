@@ -80,9 +80,7 @@ To load the plugin, call `require('fcitx5_ui_rs').setup({})`:
 
 ```lua
 require('fcitx5_ui_rs').setup({
-  on_key = "<M-Space>",  -- Use Alt+Space to activate/deactivate input method.  Default is nil
-  im_active = "pinyin",  -- Your active input method name, see $XDG_CONFIG_HOME/fcitx5/profile.  Default is "pinyin"
-  im_inactive = "keyboard-us",  -- Your inactive input method name, see $XDG_CONFIG_HOME/fcitx5/profile.  Default is "keyboard-us"
+  on_key = "<M-Space>",  -- Use Alt+Space to toggle the plugin.  Default value of on_key is nil
 })
 ```
 

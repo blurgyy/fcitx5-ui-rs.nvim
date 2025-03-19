@@ -9,20 +9,6 @@ use serde::{Deserialize, Serialize};
 pub struct PluginConfig {
     #[serde(default)]
     pub on_key: Option<String>,
-
-    #[serde(default = "default_im_active")]
-    pub im_active: String,
-
-    #[serde(default = "default_im_inactive")]
-    pub im_inactive: String,
-}
-
-fn default_im_active() -> String {
-    "pinyin".to_owned()
-}
-
-fn default_im_inactive() -> String {
-    "keyboard-us".to_owned()
 }
 
 impl FromObject for PluginConfig {

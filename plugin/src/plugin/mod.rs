@@ -83,29 +83,23 @@ impl Fcitx5Plugin {
     }
 
     pub fn activate_im(&self, buf: &Buffer) -> Result<()> {
-        if let (Some(controller), Some(ctx), Some(config)) = (
+        if let (Some(controller), Some(ctx)) = (
             self.controller.get(&buf.handle()),
             self.ctx.get(&buf.handle()),
-            self.config.as_ref(),
         ) {
             ctx.focus_in()?;
-            if controller.current_input_method()? != *config.im_active {
-                controller.toggle()?;
-            }
+            controller.activate()?;
         }
         Ok(())
     }
 
     pub fn deactivate_im(&self, buf: &Buffer) -> Result<()> {
-        if let (Some(controller), Some(ctx), Some(config)) = (
+        if let (Some(controller), Some(ctx)) = (
             self.controller.get(&buf.handle()),
             self.ctx.get(&buf.handle()),
-            self.config.as_ref(),
         ) {
             ctx.focus_in()?;
-            if controller.current_input_method()? != *config.im_inactive {
-                controller.toggle()?;
-            }
+            controller.deactivate()?;
         }
         Ok(())
     }

@@ -187,7 +187,7 @@ pub fn register_commands() -> oxi::Result<()> {
     )?;
 
     api::create_user_command(
-        "Fcitx5IMPinyin",
+        "Fcitx5IMActivate",
         {
             let state = state.clone();
             move |_| {
@@ -208,7 +208,7 @@ pub fn register_commands() -> oxi::Result<()> {
     )?;
 
     api::create_user_command(
-        "Fcitx5IMEnglish",
+        "Fcitx5IMDeactivate",
         {
             let state = state.clone();
             move |_| {

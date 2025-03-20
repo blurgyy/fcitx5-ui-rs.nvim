@@ -15,6 +15,7 @@ use crate::{
     fcitx5::candidates::setup_candidate_receivers,
     ignore_dbus_no_interface_error,
     plugin::{get_candidate_state, PLUGIN_NAME},
+    utils::do_feedkeys_noremap,
 };
 use crate::{
     fcitx5::candidates::CandidateState, neovim::autocmds::register_autocommands,
@@ -28,11 +29,7 @@ use crate::{plugin::get_state, utils::CURSOR_INDICATOR};
 
 use super::{autocmds::deregister_autocommands, keymaps::register_keymaps};
 
-fn handle_special_key(
-    nvim_keycode: &str,
-    the_char: char,
-    buf: &Buffer,
-) -> oxi::Result<()> {
+fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
     let state = get_state();
     let state_guard = state.lock().unwrap();
     let candidate_guard = state_guard.candidate_state.lock().unwrap();
@@ -47,31 +44,32 @@ fn handle_special_key(
                     match callback.call(()) {
                         Ok(()) => {}
                         Err(_) => {
-                            // fallback to vanilla key input
-                            api::feedkeys(
-                                &the_char.to_string(),
-                                api::types::Mode::Normal,
-                                true,
-                            );
+                            // fallback to vanilla key input, ignore any possible error
+                            let _ = do_feedkeys_noremap(nvim_keycode);
                         }
                     }
+                } else if let Some(rhs) = km.rhs.as_ref() {
+                    // ignore any possible error
+                    let _ = do_feedkeys_noremap(rhs);
                 }
             } else {
-                // oxi::print!(
+                // eprintln!(
                 //     "{}: no existing keymaps of key '{}' for current buffer ({})",
                 //     PLUGIN_NAME,
                 //     nvim_keycode,
                 //     buf.handle(),
                 // );
-                api::feedkeys(&the_char.to_string(), api::types::Mode::Normal, true);
+                // ignore any possible error
+                let _ = do_feedkeys_noremap(nvim_keycode);
             }
         } else {
-            // oxi::print!(
-            //     "{}: warning: existing keymaps for current buffer ({}) is not registered",
+            // eprintln!(
+            //     "{}: warning: current buffer ({}) has no existing keymaps, or they are is not registered",
             //     PLUGIN_NAME,
             //     buf.handle(),
             // );
-            api::feedkeys(&the_char.to_string(), api::types::Mode::Normal, true);
+            // ignore any possible error
+            let _ = do_feedkeys_noremap(nvim_keycode);
         }
         return Ok(());
     }
@@ -232,31 +230,31 @@ pub fn register_commands() -> oxi::Result<()> {
 
     api::create_user_command(
         "Fcitx5TryInsertBackSpace",
-        move |_| handle_special_key("<BS>", '\x08', &api::get_current_buf()),
+        move |_| handle_special_key("<BS>", &api::get_current_buf()),
         &CreateCommandOpts::default(),
     )?;
 
     api::create_user_command(
         "Fcitx5TryInsertCarriageReturn",
-        move |_| handle_special_key("<CR>", '\n', &api::get_current_buf()),
+        move |_| handle_special_key("<CR>", &api::get_current_buf()),
         &CreateCommandOpts::default(),
     )?;
 
     api::create_user_command(
         "Fcitx5TryInsertEscape",
-        move |_| handle_special_key("<Esc>", '\x1b', &api::get_current_buf()),
+        move |_| handle_special_key("<Esc>", &api::get_current_buf()),
         &CreateCommandOpts::default(),
     )?;
 
     api::create_user_command(
         "Fcitx5TryInsertLeft",
-        move |_| handle_special_key("<Left>", '\x1b', &api::get_current_buf()),
+        move |_| handle_special_key("<Left>", &api::get_current_buf()),
         &CreateCommandOpts::default(),
     )?;
 
     api::create_user_command(
         "Fcitx5TryInsertRight",
-        move |_| handle_special_key("<Right>", '\x1b', &api::get_current_buf()),
+        move |_| handle_special_key("<Right>", &api::get_current_buf()),
         &CreateCommandOpts::default(),
     )?;
 
@@ -363,9 +361,7 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result
     // Release the lock before setting up autocommands
     drop(state_guard);
 
-    // Setup autocommands
     register_autocommands(state.clone(), trigger, &buf)?;
-
     register_keymaps(state.clone(), &buf)?;
 
     Ok(())

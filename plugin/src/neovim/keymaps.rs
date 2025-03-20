@@ -62,18 +62,3 @@ pub fn register_keymaps(
 
     Ok(())
 }
-
-pub fn deregister_keymaps(state: Arc<Mutex<Fcitx5Plugin>>) -> oxi::Result<()> {
-    let mut buf = api::get_current_buf();
-
-    buf.del_keymap(api::types::Mode::Insert, "<BS>")?;
-    buf.del_keymap(api::types::Mode::Insert, "<CR>")?;
-    buf.del_keymap(api::types::Mode::Insert, "<Esc>")?;
-    buf.del_keymap(api::types::Mode::Insert, "<Left>")?;
-    buf.del_keymap(api::types::Mode::Insert, "<Right>")?;
-
-    let mut state_guard = state.lock().unwrap();
-    state_guard.restore_existing_keymaps(&buf)?;
-
-    Ok(())
-}

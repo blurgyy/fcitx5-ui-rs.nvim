@@ -6,7 +6,7 @@ use fcitx5_dbus::input_context::InputContextProxyBlocking;
 use fcitx5_dbus::zbus::Result;
 use nvim_oxi::{
     self as oxi,
-    api::{self, opts::SetKeymapOpts, types::KeymapInfos, Buffer},
+    api::{self, types::KeymapInfos, Buffer},
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -120,34 +120,6 @@ impl Fcitx5Plugin {
                         .insert(buf.handle(), new_buf_keymaps);
                 }
                 _ => {}
-            }
-        }
-        Ok(())
-    }
-
-    pub fn restore_existing_keymaps(&mut self, buf: &Buffer) -> oxi::Result<()> {
-        if let Some(mut buf_keymaps) =
-            self.existing_keymaps_insert.remove(&buf.handle())
-        {
-            for km in buf_keymaps.values_mut() {
-                let mut buf = buf.clone();
-                buf.set_keymap(
-                    api::types::Mode::Insert,
-                    &km.lhs,
-                    &km.rhs.as_ref().unwrap_or(&"".to_string()),
-                    {
-                        let mut builder = SetKeymapOpts::builder();
-                        let mut builder = builder
-                            .expr(km.expr)
-                            .nowait(km.nowait)
-                            .noremap(km.noremap)
-                            .silent(km.silent);
-                        if let Some(callback) = km.callback.take() {
-                            builder = builder.callback(callback);
-                        }
-                        &builder.build()
-                    },
-                )?;
             }
         }
         Ok(())

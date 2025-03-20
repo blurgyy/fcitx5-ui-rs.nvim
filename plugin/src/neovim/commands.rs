@@ -26,10 +26,7 @@ use crate::{
 use crate::{plugin::get_candidate_window, utils::as_api_error};
 use crate::{plugin::get_state, utils::CURSOR_INDICATOR};
 
-use super::{
-    autocmds::deregister_autocommands,
-    keymaps::{deregister_keymaps, register_keymaps},
-};
+use super::{autocmds::deregister_autocommands, keymaps::register_keymaps};
 
 fn handle_special_key(
     nvim_keycode: &str,
@@ -76,6 +73,11 @@ fn handle_special_key(
             // );
             api::feedkeys(&the_char.to_string(), api::types::Mode::Normal, true);
         }
+        return Ok(());
+    }
+
+    // if plugin is unloaded, don't do anything
+    if !state_guard.initialized(buf) {
         return Ok(());
     }
 
@@ -390,7 +392,6 @@ pub fn unload_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Resu
 
     // Delete the augroup if it exists
     deregister_autocommands(state.clone(), &buf)?;
-    deregister_keymaps(state)?;
     Ok(())
 }
 

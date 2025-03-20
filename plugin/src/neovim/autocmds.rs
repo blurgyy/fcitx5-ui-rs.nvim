@@ -102,7 +102,7 @@ pub fn register_autocommands(
     drop(state_guard);
 
     // Set up the InsertCharPre event handler
-    setup_insert_char_pre(trigger.clone(), &buf)?;
+    setup_insert_char_pre(trigger.clone(), buf)?;
 
     Ok(())
 }
@@ -125,7 +125,7 @@ pub fn setup_insert_char_pre(trigger: AsyncHandle, buf: &Buffer) -> oxi::Result<
     let state_guard = state.lock().unwrap();
 
     // Only proceed if initialized
-    if !state_guard.initialized(&buf) {
+    if !state_guard.initialized(buf) {
         return Ok(());
     }
 

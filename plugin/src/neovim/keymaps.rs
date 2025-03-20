@@ -95,11 +95,10 @@ fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
             let mut candidate_guard = candidate_state.lock().unwrap();
             let insert_text = candidate_guard
                 .preedit_text
-                .replace(' ', "")
-                .replace(CURSOR_INDICATOR, "")
+                .replace([' ', CURSOR_INDICATOR], "")
                 .clone();
             candidate_guard.mark_for_insert(insert_text);
-            ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(&buf));
+            ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
             drop(candidate_guard);
             oxi::schedule({
                 let candidate_state = candidate_state.clone();
@@ -109,7 +108,7 @@ fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
         }
         "<esc>" => {
             let state_guard = state.lock().unwrap();
-            ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(&buf));
+            ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
             oxi::schedule(move |_| process_candidate_updates(get_candidate_state()));
             Ok(())
         }
@@ -124,7 +123,7 @@ pub fn register_keymaps(
     let mut state_guard = state.lock().unwrap();
 
     // Only proceed if initialized, and we did not register the keymaps before for this buffer.
-    if !state_guard.initialized(&buf)
+    if !state_guard.initialized(buf)
         || *state_guard
             .keymaps_registered
             .get(&buf.handle())

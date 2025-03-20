@@ -329,35 +329,26 @@ impl CandidateState {
                     return;
                 }
 
-                match buffer.line_count() {
-                    Ok(line_count) => {
-                        let _ = buffer.set_lines(0..line_count, true, lines);
-                    }
-                    Err(_) => {}
+                if let Ok(line_count) = buffer.line_count() {
+                    let _ = buffer.set_lines(0..line_count, true, lines);
                 }
             }
         });
 
-        oxi::schedule({
-            let width = width;
-            let height = height;
-            move |_| {
-                // Small delay to ensure buffer update completes first
-                std::thread::sleep(std::time::Duration::from_millis(5));
+        oxi::schedule(move |_| {
+            // Small delay to ensure buffer update completes first
+            std::thread::sleep(std::time::Duration::from_millis(5));
 
-                // Get candidate window
-                if let Ok(mut guard) = get_candidate_window().lock() {
-                    if let Some(window) = guard.as_mut() {
-                        if window.is_valid() {
-                            // Create config with new dimensions
-                            let config = WindowConfig::builder()
-                                .width(width)
-                                .height(height)
-                                .build();
+            // Get candidate window
+            if let Ok(mut guard) = get_candidate_window().lock() {
+                if let Some(window) = guard.as_mut() {
+                    if window.is_valid() {
+                        // Create config with new dimensions
+                        let config =
+                            WindowConfig::builder().width(width).height(height).build();
 
-                            // Apply new dimensions
-                            let _ = window.set_config(&config);
-                        }
+                        // Apply new dimensions
+                        let _ = window.set_config(&config);
                     }
                 }
             }

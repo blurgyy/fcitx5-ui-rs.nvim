@@ -12,15 +12,14 @@ macro_rules! ignore_dbus_no_interface_error {
                 object_name,
                 Some(message),
                 _,
-            )) if object_name.to_string()
-                == "org.freedesktop.DBus.Error.UnknownObject"
+            )) if object_name == "org.freedesktop.DBus.Error.UnknownObject"
                 && message.starts_with(
                     "Unknown object '/org/freedesktop/portal/inputcontext/",
                 ) =>
             {
                 oxi::print!(
                     "{}: Input context gone, maybe fcitx5 restarted.  Ignoring.",
-                    crate::plugin::PLUGIN_NAME,
+                    $crate::plugin::PLUGIN_NAME,
                 );
             }
             Err(e) => {

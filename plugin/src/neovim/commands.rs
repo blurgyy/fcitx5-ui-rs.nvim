@@ -186,7 +186,7 @@ pub fn process_candidate_updates(
 pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
-    if state_guard.initialized(&buf) {
+    if state_guard.initialized(buf) {
         oxi::print!("{PLUGIN_NAME}: already loaded");
         return Ok(());
     }
@@ -207,7 +207,7 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result
         .controller
         .insert(buf.handle(), controller.clone());
     state_guard.ctx.insert(buf.handle(), ctx.clone());
-    ignore_dbus_no_interface_error!(state_guard.deactivate_im(&buf));
+    ignore_dbus_no_interface_error!(state_guard.deactivate_im(buf));
 
     let trigger =
         AsyncHandle::new(move || process_candidate_updates(get_candidate_state()))?;
@@ -219,15 +219,15 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result
     // if already in insert mode, set the im
     if let Ok(got_mode) = api::get_mode() {
         if got_mode.mode == api::types::Mode::Insert {
-            ignore_dbus_no_interface_error!(state_guard.activate_im(&buf));
+            ignore_dbus_no_interface_error!(state_guard.activate_im(buf));
         }
     }
 
     // Release the lock before setting up autocommands
     drop(state_guard);
 
-    register_autocommands(state.clone(), trigger, &buf)?;
-    register_keymaps(state.clone(), &buf)?;
+    register_autocommands(state.clone(), trigger, buf)?;
+    register_keymaps(state.clone(), buf)?;
 
     Ok(())
 }
@@ -236,13 +236,13 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result
 pub fn unload_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result<()> {
     let mut state_guard = state.lock().unwrap();
 
-    if !state_guard.initialized(&buf) {
+    if !state_guard.initialized(buf) {
         oxi::print!("{PLUGIN_NAME}: already unloaded");
         return Ok(());
     }
 
     // Reset and clear the input context if it exists
-    ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(&buf));
+    ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
 
     state_guard.controller.remove(&buf.handle());
     if let Some(ctx) = state_guard.ctx.remove(&buf.handle()) {
@@ -252,7 +252,7 @@ pub fn unload_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Resu
     drop(state_guard);
 
     // Delete the augroup if it exists
-    deregister_autocommands(state.clone(), &buf)?;
+    deregister_autocommands(state.clone(), buf)?;
     Ok(())
 }
 

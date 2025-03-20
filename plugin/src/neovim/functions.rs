@@ -16,16 +16,13 @@ pub fn setup(config: PluginConfig) -> bool {
     drop(state_guard);
 
     // Initialize the plugin's commands
-    match crate::neovim::commands::register_commands() {
-        Err(e) => {
-            oxi::print!("{PLUGIN_NAME}: Could not setup commands: {e}");
-            return false;
-        }
-        Ok(()) => {}
+    if let Err(e) = crate::neovim::commands::register_commands() {
+        oxi::print!("{PLUGIN_NAME}: Could not setup commands: {e}");
+        return false;
     }
 
     if let Some(on_key) = config.on_key {
-        match api::set_keymap(
+        if let Err(e) = api::set_keymap(
             api::types::Mode::Normal,
             &on_key,
             "",
@@ -49,13 +46,10 @@ pub fn setup(config: PluginConfig) -> bool {
                     .build(),
             )
         }) {
-            Err(e) => {
-                oxi::print!(
-                    "{PLUGIN_NAME}: Could not setup default enable keymap for '{on_key}': {e}"
-                );
-                return false;
-            }
-            Ok(()) => {}
+            oxi::print!(
+                "{PLUGIN_NAME}: Could not setup default enable keymap for '{on_key}': {e}"
+            );
+            return false;
         }
     }
 

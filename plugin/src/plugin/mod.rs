@@ -49,8 +49,8 @@ impl Fcitx5Plugin {
     }
 
     pub fn initialized(&self, buf: &Buffer) -> bool {
-        self.controller.get(&buf.handle()).is_some()
-            && self.ctx.get(&buf.handle()).is_some()
+        self.controller.contains_key(&buf.handle())
+            && self.ctx.contains_key(&buf.handle())
     }
 
     pub fn reset_im_ctx(&self, buf: &Buffer) -> Result<()> {
@@ -110,27 +110,26 @@ impl Fcitx5Plugin {
 
     pub fn store_original_keymaps(&mut self, buf: &Buffer) -> oxi::Result<()> {
         for km in buf.get_keymap(api::types::Mode::Insert)? {
-            match km.lhs.to_lowercase().as_ref() {
-                key @ ("<esc>" | "<cr>" | "<bs>" | "<left>" | "<right>") => {
-                    let new_buf_keymaps = if let Some(mut buf_keymaps) =
-                        self.existing_keymaps_insert.remove(&buf.handle())
-                    {
-                        buf_keymaps.insert(key.to_owned(), km);
-                        buf_keymaps
-                    } else {
-                        HashMap::from_iter([(key.to_owned(), km)])
-                    };
-                    self.existing_keymaps_insert
-                        .insert(buf.handle(), new_buf_keymaps);
-                }
-                _ => {}
+            if let key @ ("<esc>" | "<cr>" | "<bs>" | "<left>" | "<right>") =
+                km.lhs.to_lowercase().as_ref()
+            {
+                let new_buf_keymaps = if let Some(mut buf_keymaps) =
+                    self.existing_keymaps_insert.remove(&buf.handle())
+                {
+                    buf_keymaps.insert(key.to_owned(), km);
+                    buf_keymaps
+                } else {
+                    HashMap::from_iter([(key.to_owned(), km)])
+                };
+                self.existing_keymaps_insert
+                    .insert(buf.handle(), new_buf_keymaps);
             }
         }
         Ok(())
     }
 }
 
-pub static PLUGIN_NAME: &'static str = "fcitx5-ui-rs.nvim";
+pub static PLUGIN_NAME: &str = "fcitx5-ui-rs.nvim";
 
 // Use lazy_static for thread-safe initialization
 lazy_static::lazy_static! {

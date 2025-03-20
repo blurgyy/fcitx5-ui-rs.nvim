@@ -22,6 +22,9 @@ type BufferOriginalKeymaps = HashMap<String, KeymapInfos>;
 pub struct Fcitx5Plugin {
     pub config: Option<PluginConfig>,
     pub controller: HashMap<i32, ControllerProxyBlocking<'static>>,
+    /// Whether a buffer has been registered with our keymaps, we will not register it multiple
+    /// times.
+    pub keymaps_registered: HashMap<i32, bool>,
     /// Per-buffer input context
     pub ctx: HashMap<i32, InputContextProxyBlocking<'static>>,
     /// Per-buffer augroup_id
@@ -36,6 +39,7 @@ impl Fcitx5Plugin {
         Self {
             config: None,
             controller: HashMap::new(),
+            keymaps_registered: HashMap::new(),
             ctx: HashMap::new(),
             augroup_id: HashMap::new(),
             candidate_state: Arc::new(Mutex::new(CandidateState::new())),
@@ -104,7 +108,7 @@ impl Fcitx5Plugin {
         Ok(())
     }
 
-    pub fn store_existing_keymaps(&mut self, buf: &Buffer) -> oxi::Result<()> {
+    pub fn store_original_keymaps(&mut self, buf: &Buffer) -> oxi::Result<()> {
         for km in buf.get_keymap(api::types::Mode::Insert)? {
             match km.lhs.to_lowercase().as_ref() {
                 key @ ("<esc>" | "<cr>" | "<bs>" | "<left>" | "<right>") => {

@@ -336,9 +336,6 @@ impl CandidateState {
         });
 
         oxi::schedule(move |_| {
-            // Small delay to ensure buffer update completes first
-            std::thread::sleep(std::time::Duration::from_millis(5));
-
             // Get candidate window
             if let Ok(mut guard) = get_candidate_window().lock() {
                 if let Some(window) = guard.as_mut() {

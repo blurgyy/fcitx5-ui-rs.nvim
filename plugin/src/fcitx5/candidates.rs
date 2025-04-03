@@ -221,7 +221,6 @@ impl CandidateState {
                 .width(width)
                 .height(height)
                 .focusable(false)
-                .border(WindowBorder::Rounded)
                 .title(WindowTitle::SimpleString(" Fcitx5 ".to_owned().into()))
                 .title_pos(WindowTitlePosition::Center)
                 .style(WindowStyle::Minimal)

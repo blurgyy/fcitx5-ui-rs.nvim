@@ -5,6 +5,8 @@ use fcitx5_dbus::{
     input_context::InputContextProxyBlocking,
     utils::key_event::KeyState as Fcitx5KeyState,
 };
+use nvim_oxi::api::opts::OptionOpts;
+use nvim_oxi::api::set_option_value;
 use nvim_oxi::{
     self as oxi,
     api::{
@@ -233,10 +235,18 @@ impl CandidateState {
                 move |_| {
                     let mut candidate_window_guard = candidate_window.lock().unwrap();
                     match api::open_win(&buffer, false, &opts) {
-                        Ok(mut window) => {
+                        Ok(window) => {
                             // Set window options
-                            let _ = window.set_option("winblend", 15);
-                            let _ = window.set_option("wrap", true);
+                            let _ = set_option_value(
+                                "winblend",
+                                15,
+                                &OptionOpts::builder().win(window.clone()).build(),
+                            );
+                            let _ = set_option_value(
+                                "wrap",
+                                true,
+                                &OptionOpts::builder().win(window.clone()).build(),
+                            );
                             if let Some(old_window) =
                                 candidate_window_guard.replace(window)
                             {

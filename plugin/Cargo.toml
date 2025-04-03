@@ -10,7 +10,7 @@ lazy_static = "1.5.0"
 #   See: <https://github.com/noib3/nvim-oxi/issues/226>
 nvim-oxi = { git = "https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5", features = [
   "libuv",
-  "neovim-0-10",
+  "neovim-nightly",
 ] }
 # TODO: use upstream again once <https://github.com/noib3/nvim-oxi/issues/226> is
 # resolved

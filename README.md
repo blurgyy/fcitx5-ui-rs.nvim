@@ -1,6 +1,6 @@
 # fcitx5-ui-rs.nvim
 
-This plugin allows using the [Fcitx5] input method natively inside Neovim (v0.10+).
+This plugin allows using the [Fcitx5] input method natively inside Neovim (v0.11+).
 
 You can now use Fcitx5 remotely in an SSH session!
 

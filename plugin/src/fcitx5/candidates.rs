@@ -404,6 +404,9 @@ pub fn setup_candidate_receivers(
                     for signal in update_signal {
                         match signal.args() {
                             Ok(args) => {
+                                // Obtain cursor_idx before borrowing args.candidates
+                                let cursor_idx = *args.cursor_idx();
+
                                 // Convert candidate data from Fcitx5 format
                                 let mut candidates = Vec::new();
                                 for (display, text) in args.candidates {
@@ -429,6 +432,9 @@ pub fn setup_candidate_receivers(
                                     guard.preedit_text = preedit_text;
                                     guard.has_prev = args.has_prev;
                                     guard.has_next = args.has_next;
+                                    guard.selected_index =
+                                        usize::try_from(cursor_idx).unwrap_or(0);
+                                    // args.cursor_idx().try_into().unwrap_or(0);
 
                                     // Mark for update based on whether we have candidates
                                     if !guard.candidates.is_empty() {

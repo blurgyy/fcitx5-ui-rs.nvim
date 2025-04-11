@@ -70,16 +70,26 @@ fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
     drop(state_guard);
 
     match nvim_keycode.to_lowercase().as_str() {
-        key @ ("<bs>" | "<left>" | "<right>") => {
+        key @ ("<bs>" | "<left>" | "<right>" | "<tab>" | "<s-tab>" | "<c-w>" | "") => {
             let state_guard = state.lock().unwrap();
             let ctx = state_guard.ctx.get(&buf.handle()).unwrap();
             let key_code = match key {
-                "<bs>" => Fcitx5KeyVal::DELETE,
+                "<bs>" | "<c-w>" | "" => Fcitx5KeyVal::DELETE,
                 "<left>" => Fcitx5KeyVal::LEFT,
                 "<right>" => Fcitx5KeyVal::RIGHT,
+                // REF: <https://github.com/fcitx/fcitx5/blob/b4405d70a6d58ac94b9f06a446e84f777ea5f3b7/src/lib/fcitx-utils/keylist#L3>
+                "<tab>" | "<s-tab>" => Fcitx5KeyVal::from_char('\u{FF09}'),
                 _ => unreachable!(),
             };
-            let key_state = Fcitx5KeyState::NoState;
+            let key_state = if key.starts_with("<c-s-") || key.starts_with("<s-c-") {
+                Fcitx5KeyState::Ctrl_Alt
+            } else if key.starts_with("<s-") {
+                Fcitx5KeyState::Shift
+            } else if key == "" || key.starts_with("<c-") {
+                Fcitx5KeyState::Ctrl
+            } else {
+                Fcitx5KeyState::NoState
+            };
             ctx.process_key_event(key_code, 0, key_state, false, 0)
                 .map_err(as_api_error)?;
             let mut candidate_guard = state_guard.candidate_state.lock().unwrap();
@@ -189,6 +199,52 @@ pub fn register_keymaps(
             .noremap(true)
             .silent(true)
             .callback(move |_| handle_special_key("<Right>", &api::get_current_buf()))
+            .build(),
+    )?;
+
+    buf.set_keymap(
+        api::types::Mode::Insert,
+        "<Tab>",
+        "",
+        &SetKeymapOpts::builder()
+            .noremap(true)
+            .silent(true)
+            .callback(move |_| handle_special_key("<Tab>", &api::get_current_buf()))
+            .build(),
+    )?;
+
+    buf.set_keymap(
+        api::types::Mode::Insert,
+        "<S-Tab>",
+        "",
+        &SetKeymapOpts::builder()
+            .noremap(true)
+            .silent(true)
+            .callback(move |_| handle_special_key("<S-Tab>", &api::get_current_buf()))
+            .build(),
+    )?;
+
+    buf.set_keymap(
+        api::types::Mode::Insert,
+        "<C-w>",
+        "",
+        &SetKeymapOpts::builder()
+            .noremap(true)
+            .silent(true)
+            .callback(move |_| handle_special_key("<C-w>", &api::get_current_buf()))
+            .build(),
+    )?;
+
+    buf.set_keymap(
+        api::types::Mode::Insert,
+        // This is actually <C-BS>, but nvim sees it as this character (use <C-v>, <C-BS>
+        // and see for yourself.
+        "",
+        "",
+        &SetKeymapOpts::builder()
+            .noremap(true)
+            .silent(true)
+            .callback(move |_| handle_special_key("", &api::get_current_buf()))
             .build(),
     )?;
 

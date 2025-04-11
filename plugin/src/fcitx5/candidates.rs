@@ -12,7 +12,7 @@ use nvim_oxi::{
     api::{
         self,
         types::{
-            WindowBorder, WindowConfig, WindowRelativeTo, WindowStyle, WindowTitle,
+            WindowConfig, WindowRelativeTo, WindowStyle, WindowTitle,
             WindowTitlePosition,
         },
         Buffer,

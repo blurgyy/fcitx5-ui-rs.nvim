@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use fcitx5_dbus::utils::key_event::{
     KeyState as Fcitx5KeyState, KeyVal as Fcitx5KeyVal,
@@ -10,11 +13,23 @@ use nvim_oxi::{
 
 use crate::{
     ignore_dbus_no_interface_error,
-    plugin::{get_candidate_state, get_state, Fcitx5Plugin},
+    plugin::{get_candidate_state, get_state, Fcitx5Plugin, PLUGIN_NAME},
     utils::{as_api_error, do_feedkeys_noremap, CURSOR_INDICATOR},
 };
 
 use super::commands::process_candidate_updates;
+
+lazy_static::lazy_static! {
+    static ref SPECIAL_KEYMAPS: HashMap<String, (Fcitx5KeyState, Fcitx5KeyVal)> = HashMap::from([
+        ("<bs>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::DELETE)),
+        ("<c-w>".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::DELETE)),
+        ("".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::DELETE)),
+        ("<left>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::LEFT)),
+        ("<right>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::RIGHT)),
+        ("<tab>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::from_char('\u{FF09}'))),
+        ("<s-tab>".to_owned(), (Fcitx5KeyState::Shift, Fcitx5KeyVal::from_char('\u{FF09}'))),
+    ]);
+}
 
 fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
     let state = get_state();
@@ -70,27 +85,18 @@ fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
     drop(state_guard);
 
     match nvim_keycode.to_lowercase().as_str() {
-        key @ ("<bs>" | "<left>" | "<right>" | "<tab>" | "<s-tab>" | "<c-w>" | "") => {
+        key @ _
+            if SPECIAL_KEYMAPS
+                .keys()
+                .into_iter()
+                .any(|k| k.to_lowercase() == key) =>
+        {
             let state_guard = state.lock().unwrap();
             let ctx = state_guard.ctx.get(&buf.handle()).unwrap();
-            let key_code = match key {
-                "<bs>" | "<c-w>" | "" => Fcitx5KeyVal::DELETE,
-                "<left>" => Fcitx5KeyVal::LEFT,
-                "<right>" => Fcitx5KeyVal::RIGHT,
-                // REF: <https://github.com/fcitx/fcitx5/blob/b4405d70a6d58ac94b9f06a446e84f777ea5f3b7/src/lib/fcitx-utils/keylist#L3>
-                "<tab>" | "<s-tab>" => Fcitx5KeyVal::from_char('\u{FF09}'),
-                _ => unreachable!(),
-            };
-            let key_state = if key.starts_with("<c-s-") || key.starts_with("<s-c-") {
-                Fcitx5KeyState::Ctrl_Alt
-            } else if key.starts_with("<s-") {
-                Fcitx5KeyState::Shift
-            } else if key == "" || key.starts_with("<c-") {
-                Fcitx5KeyState::Ctrl
-            } else {
-                Fcitx5KeyState::NoState
-            };
-            ctx.process_key_event(key_code, 0, key_state, false, 0)
+            let (key_state, key_code) = SPECIAL_KEYMAPS.get(key).unwrap_or_else(|| {
+                unreachable!("{PLUGIN_NAME}: A key '{key}' is supplied, but there has not been a mapping defined for it!")
+            });
+            ctx.process_key_event(*key_code, 0, *key_state, false, 0)
                 .map_err(as_api_error)?;
             let mut candidate_guard = state_guard.candidate_state.lock().unwrap();
             candidate_guard.mark_for_update();

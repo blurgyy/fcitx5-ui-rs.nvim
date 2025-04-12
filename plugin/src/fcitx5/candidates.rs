@@ -216,6 +216,7 @@ impl CandidateState {
             // Create window options
             let opts = WindowConfig::builder()
                 .relative(WindowRelativeTo::Cursor)
+                .zindex(0x7fff)
                 .row(1)
                 .col(0)
                 .width(width)

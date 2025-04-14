@@ -49,6 +49,11 @@ pub fn register_autocommands(
             let state_ref = state.clone();
             let buf = buf.clone();
             move |_| {
+                let insertmode = api::get_vvar::<String>("insertmode")?;
+                if insertmode != "i" {
+                    return Ok(false);
+                }
+
                 let state_guard = state_ref.lock().unwrap();
                 if !state_guard.initialized(&buf) {
                     return Ok(false);

@@ -26,6 +26,8 @@ lazy_static::lazy_static! {
         ("".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::DELETE)),
         ("<left>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::LEFT)),
         ("<right>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::RIGHT)),
+        ("<c-left>".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::LEFT)),
+        ("<c-right>".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::RIGHT)),
         ("<tab>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::from_char('\u{FF09}'))),
         ("<s-tab>".to_owned(), (Fcitx5KeyState::Shift, Fcitx5KeyVal::from_char('\u{FF09}'))),
     ]);

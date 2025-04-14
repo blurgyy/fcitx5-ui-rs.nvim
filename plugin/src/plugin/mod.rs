@@ -1,22 +1,79 @@
 //! Plugin state management
 pub mod config;
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
 use fcitx5_dbus::controller::ControllerProxyBlocking;
 use fcitx5_dbus::input_context::InputContextProxyBlocking;
+use fcitx5_dbus::utils::key_event::{
+    KeyState as Fcitx5KeyState, KeyVal as Fcitx5KeyVal,
+};
 use fcitx5_dbus::zbus::Result;
 use nvim_oxi::{
     self as oxi,
     api::{self, types::KeymapInfos, Buffer},
 };
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
-use crate::fcitx5::candidates::CandidateState;
-use crate::utils::as_api_error;
+use crate::{
+    fcitx5::candidates::CandidateState, neovim::commands::process_candidate_updates,
+    utils::CURSOR_INDICATOR,
+};
+use crate::{ignore_dbus_no_interface_error, utils::as_api_error};
 
 use config::PluginConfig;
 
 type BufferOriginalKeymaps = HashMap<String, KeymapInfos>;
+
+lazy_static::lazy_static! {
+    pub(crate) static ref KEYMAPS: HashMap<String, Box<dyn Fn(Arc<Mutex<Fcitx5Plugin>>, &Buffer) -> oxi::Result<()> + Send + Sync>> = {
+        let mut map: HashMap<String, Box<dyn Fn(Arc<Mutex<Fcitx5Plugin>>, &Buffer) -> oxi::Result<()> + Send + Sync + 'static>> = HashMap::new();
+
+        map.insert(
+            "<cr>".to_owned(),
+            Box::new(move |state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer| {
+                let state_guard = state.lock().unwrap();
+                let candidate_state = state_guard.candidate_state.clone();
+                let mut candidate_guard = candidate_state.lock().unwrap();
+                let insert_text = candidate_guard
+                    .preedit_text
+                    .replace([' ', CURSOR_INDICATOR], "")
+                    .clone();
+                candidate_guard.mark_for_insert(insert_text);
+                ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
+                drop(candidate_guard);
+                oxi::schedule({
+                    let candidate_state = candidate_state.clone();
+                    move |_| process_candidate_updates(candidate_state.clone())
+                });
+                Ok(())
+            }
+        ));
+
+        map.insert(
+            "<esc>".to_owned(),
+            Box::new(move |state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer| {
+                let state_guard = state.lock().unwrap();
+                ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
+                oxi::schedule(move |_| process_candidate_updates(get_candidate_state()));
+                Ok(())
+            }
+        ));
+
+        map
+    };
+    pub(crate) static ref PASSTHROUGH_KEYMAPS: HashMap<String, (Fcitx5KeyState, Fcitx5KeyVal)> = HashMap::from([
+        ("<bs>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::DELETE)),
+        ("<c-w>".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::DELETE)),
+        ("".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::DELETE)),
+        ("<left>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::LEFT)),
+        ("<right>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::RIGHT)),
+        ("<c-left>".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::LEFT)),
+        ("<c-right>".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::RIGHT)),
+        ("<tab>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::from_char('\u{FF09}'))),
+        ("<s-tab>".to_owned(), (Fcitx5KeyState::Shift, Fcitx5KeyVal::from_char('\u{FF09}'))),
+    ]);
+}
 
 // Structure to hold the plugin state
 pub struct Fcitx5Plugin {
@@ -110,8 +167,11 @@ impl Fcitx5Plugin {
 
     pub fn store_original_keymaps(&mut self, buf: &Buffer) -> oxi::Result<()> {
         for km in buf.get_keymap(api::types::Mode::Insert)? {
-            if let key @ ("<esc>" | "<cr>" | "<bs>" | "<left>" | "<right>") =
-                km.lhs.to_lowercase().as_ref()
+            let key = km.lhs.to_lowercase();
+            if KEYMAPS
+                .keys()
+                .chain(PASSTHROUGH_KEYMAPS.keys())
+                .any(|k| k.to_lowercase() == key)
             {
                 let new_buf_keymaps = if let Some(mut buf_keymaps) =
                     self.existing_keymaps_insert.remove(&buf.handle())

@@ -1,73 +1,19 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
-use fcitx5_dbus::utils::key_event::{
-    KeyState as Fcitx5KeyState, KeyVal as Fcitx5KeyVal,
-};
 use nvim_oxi::{
     self as oxi,
     api::{self, opts::SetKeymapOpts, Buffer},
 };
 
 use crate::{
-    ignore_dbus_no_interface_error,
-    plugin::{get_candidate_state, get_state, Fcitx5Plugin, PLUGIN_NAME},
-    utils::{as_api_error, do_feedkeys_noremap, CURSOR_INDICATOR},
+    plugin::{
+        get_candidate_state, get_state, Fcitx5Plugin, KEYMAPS, PASSTHROUGH_KEYMAPS,
+        PLUGIN_NAME,
+    },
+    utils::{as_api_error, do_feedkeys_noremap},
 };
 
 use super::commands::process_candidate_updates;
-
-lazy_static::lazy_static! {
-    static ref KEYMAPS: HashMap<String, Box<dyn Fn(Arc<Mutex<Fcitx5Plugin>>, &Buffer) -> oxi::Result<()> + Send + Sync>> = {
-        let mut map: HashMap<String, Box<dyn Fn(Arc<Mutex<Fcitx5Plugin>>, &Buffer) -> oxi::Result<()> + Send + Sync + 'static>> = HashMap::new();
-
-        map.insert(
-            "<cr>".to_owned(),
-            Box::new(move |state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer| {
-                let state_guard = state.lock().unwrap();
-                let candidate_state = state_guard.candidate_state.clone();
-                let mut candidate_guard = candidate_state.lock().unwrap();
-                let insert_text = candidate_guard
-                    .preedit_text
-                    .replace([' ', CURSOR_INDICATOR], "")
-                    .clone();
-                candidate_guard.mark_for_insert(insert_text);
-                ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
-                drop(candidate_guard);
-                oxi::schedule({
-                    let candidate_state = candidate_state.clone();
-                    move |_| process_candidate_updates(candidate_state.clone())
-                });
-                Ok(())
-            }
-        ));
-
-        map.insert(
-            "<esc>".to_owned(),
-            Box::new(move |state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer| {
-                let state_guard = state.lock().unwrap();
-                ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
-                oxi::schedule(move |_| process_candidate_updates(get_candidate_state()));
-                Ok(())
-            }
-        ));
-
-        map
-    };
-    static ref PASSTHROUGH_KEYMAPS: HashMap<String, (Fcitx5KeyState, Fcitx5KeyVal)> = HashMap::from([
-        ("<bs>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::DELETE)),
-        ("<c-w>".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::DELETE)),
-        ("".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::DELETE)),
-        ("<left>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::LEFT)),
-        ("<right>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::RIGHT)),
-        ("<c-left>".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::LEFT)),
-        ("<c-right>".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::RIGHT)),
-        ("<tab>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::from_char('\u{FF09}'))),
-        ("<s-tab>".to_owned(), (Fcitx5KeyState::Shift, Fcitx5KeyVal::from_char('\u{FF09}'))),
-    ]);
-}
 
 fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
     let state = get_state();

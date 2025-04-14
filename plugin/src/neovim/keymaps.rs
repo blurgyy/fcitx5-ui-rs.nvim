@@ -123,12 +123,7 @@ fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
     drop(state_guard);
 
     match nvim_keycode.to_lowercase().as_str() {
-        key @ _
-            if PASSTHROUGH_KEYMAPS
-                .keys()
-                .into_iter()
-                .any(|k| k.to_lowercase() == key) =>
-        {
+        key @ _ if PASSTHROUGH_KEYMAPS.keys().any(|k| k.to_lowercase() == key) => {
             let state_guard = state.lock().unwrap();
             let ctx = state_guard.ctx.get(&buf.handle()).unwrap();
             let (key_state, key_code) = PASSTHROUGH_KEYMAPS.get(key).unwrap_or_else(|| {
@@ -143,7 +138,7 @@ fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
             process_candidate_updates(get_candidate_state())?;
             Ok(())
         }
-        key @ _ if KEYMAPS.keys().into_iter().any(|k| k.to_lowercase() == key) => {
+        key @ _ if KEYMAPS.keys().any(|k| k.to_lowercase() == key) => {
             KEYMAPS.get(key).unwrap()(state, buf)
         }
         _ => Ok(()),

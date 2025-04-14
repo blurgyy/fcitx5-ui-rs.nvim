@@ -8,7 +8,6 @@ use nvim_oxi::{
     libuv::AsyncHandle,
 };
 
-use crate::plugin::get_state;
 use crate::{
     fcitx5::candidates::setup_candidate_receivers,
     ignore_dbus_no_interface_error,
@@ -22,6 +21,7 @@ use crate::{
     plugin::Fcitx5Plugin,
 };
 use crate::{plugin::get_candidate_window, utils::as_api_error};
+use crate::{plugin::get_state, utils::do_feedkeys_noremap};
 
 use super::{autocmds::deregister_autocommands, keymaps::register_keymaps};
 
@@ -173,6 +173,10 @@ pub fn process_candidate_updates(
                         );
                         // Move cursor to end of inserted text
                         let _ = win.set_cursor(row, col + s.len());
+                        // NB: Force undo break
+                        // TODO: Maybe make this configurable from lua side
+                        // REF: `:h i_CTRL-G_u`
+                        let _ = do_feedkeys_noremap("<C-g>u");
                     }
                 });
             }

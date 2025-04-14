@@ -20,7 +20,43 @@ use crate::{
 use super::commands::process_candidate_updates;
 
 lazy_static::lazy_static! {
-    static ref SPECIAL_KEYMAPS: HashMap<String, (Fcitx5KeyState, Fcitx5KeyVal)> = HashMap::from([
+    static ref KEYMAPS: HashMap<String, Box<dyn Fn(Arc<Mutex<Fcitx5Plugin>>, &Buffer) -> oxi::Result<()> + Send + Sync>> = {
+        let mut map: HashMap<String, Box<dyn Fn(Arc<Mutex<Fcitx5Plugin>>, &Buffer) -> oxi::Result<()> + Send + Sync + 'static>> = HashMap::new();
+
+        map.insert(
+            "<cr>".to_owned(),
+            Box::new(move |state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer| {
+                let state_guard = state.lock().unwrap();
+                let candidate_state = state_guard.candidate_state.clone();
+                let mut candidate_guard = candidate_state.lock().unwrap();
+                let insert_text = candidate_guard
+                    .preedit_text
+                    .replace([' ', CURSOR_INDICATOR], "")
+                    .clone();
+                candidate_guard.mark_for_insert(insert_text);
+                ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
+                drop(candidate_guard);
+                oxi::schedule({
+                    let candidate_state = candidate_state.clone();
+                    move |_| process_candidate_updates(candidate_state.clone())
+                });
+                Ok(())
+            }
+        ));
+
+        map.insert(
+            "<esc>".to_owned(),
+            Box::new(move |state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer| {
+                let state_guard = state.lock().unwrap();
+                ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
+                oxi::schedule(move |_| process_candidate_updates(get_candidate_state()));
+                Ok(())
+            }
+        ));
+
+        map
+    };
+    static ref PASSTHROUGH_KEYMAPS: HashMap<String, (Fcitx5KeyState, Fcitx5KeyVal)> = HashMap::from([
         ("<bs>".to_owned(), (Fcitx5KeyState::NoState, Fcitx5KeyVal::DELETE)),
         ("<c-w>".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::DELETE)),
         ("".to_owned(), (Fcitx5KeyState::Ctrl, Fcitx5KeyVal::DELETE)),
@@ -88,14 +124,14 @@ fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
 
     match nvim_keycode.to_lowercase().as_str() {
         key @ _
-            if SPECIAL_KEYMAPS
+            if PASSTHROUGH_KEYMAPS
                 .keys()
                 .into_iter()
                 .any(|k| k.to_lowercase() == key) =>
         {
             let state_guard = state.lock().unwrap();
             let ctx = state_guard.ctx.get(&buf.handle()).unwrap();
-            let (key_state, key_code) = SPECIAL_KEYMAPS.get(key).unwrap_or_else(|| {
+            let (key_state, key_code) = PASSTHROUGH_KEYMAPS.get(key).unwrap_or_else(|| {
                 unreachable!("{PLUGIN_NAME}: A key '{key}' is supplied, but there has not been a mapping defined for it!")
             });
             ctx.process_key_event(*key_code, 0, *key_state, false, 0)
@@ -107,28 +143,8 @@ fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
             process_candidate_updates(get_candidate_state())?;
             Ok(())
         }
-        "<cr>" => {
-            let state_guard = state.lock().unwrap();
-            let candidate_state = state_guard.candidate_state.clone();
-            let mut candidate_guard = candidate_state.lock().unwrap();
-            let insert_text = candidate_guard
-                .preedit_text
-                .replace([' ', CURSOR_INDICATOR], "")
-                .clone();
-            candidate_guard.mark_for_insert(insert_text);
-            ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
-            drop(candidate_guard);
-            oxi::schedule({
-                let candidate_state = candidate_state.clone();
-                move |_| process_candidate_updates(candidate_state.clone())
-            });
-            Ok(())
-        }
-        "<esc>" => {
-            let state_guard = state.lock().unwrap();
-            ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
-            oxi::schedule(move |_| process_candidate_updates(get_candidate_state()));
-            Ok(())
+        key @ _ if KEYMAPS.keys().into_iter().any(|k| k.to_lowercase() == key) => {
+            KEYMAPS.get(key).unwrap()(state, buf)
         }
         _ => Ok(()),
     }
@@ -155,7 +171,7 @@ pub fn register_keymaps(
     state_guard.store_original_keymaps(&buf)?;
     state_guard.keymaps_registered.insert(buf.handle(), true);
 
-    for k in SPECIAL_KEYMAPS.keys() {
+    for k in KEYMAPS.keys().chain(PASSTHROUGH_KEYMAPS.keys()) {
         buf.set_keymap(
             api::types::Mode::Insert,
             &k,

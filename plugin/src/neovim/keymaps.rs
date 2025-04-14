@@ -153,106 +153,18 @@ pub fn register_keymaps(
     state_guard.store_original_keymaps(&buf)?;
     state_guard.keymaps_registered.insert(buf.handle(), true);
 
-    buf.set_keymap(
-        api::types::Mode::Insert,
-        "<BS>",
-        "",
-        &SetKeymapOpts::builder()
-            .noremap(true)
-            .silent(true)
-            .callback(move |_| handle_special_key("<BS>", &api::get_current_buf()))
-            .build(),
-    )?;
-
-    buf.set_keymap(
-        api::types::Mode::Insert,
-        "<CR>",
-        "<Cmd>Fcitx5TryInsertCarriageReturn<CR>",
-        &SetKeymapOpts::builder()
-            .noremap(true)
-            .silent(true)
-            .callback(move |_| handle_special_key("<CR>", &api::get_current_buf()))
-            .build(),
-    )?;
-
-    buf.set_keymap(
-        api::types::Mode::Insert,
-        "<Esc>",
-        "",
-        &SetKeymapOpts::builder()
-            .noremap(true)
-            .silent(true)
-            .callback(move |_| handle_special_key("<Esc>", &api::get_current_buf()))
-            .build(),
-    )?;
-
-    buf.set_keymap(
-        api::types::Mode::Insert,
-        "<Left>",
-        "",
-        &SetKeymapOpts::builder()
-            .noremap(true)
-            .silent(true)
-            .callback(move |_| handle_special_key("<Left>", &api::get_current_buf()))
-            .build(),
-    )?;
-
-    buf.set_keymap(
-        api::types::Mode::Insert,
-        "<Right>",
-        "",
-        &SetKeymapOpts::builder()
-            .noremap(true)
-            .silent(true)
-            .callback(move |_| handle_special_key("<Right>", &api::get_current_buf()))
-            .build(),
-    )?;
-
-    buf.set_keymap(
-        api::types::Mode::Insert,
-        "<Tab>",
-        "",
-        &SetKeymapOpts::builder()
-            .noremap(true)
-            .silent(true)
-            .callback(move |_| handle_special_key("<Tab>", &api::get_current_buf()))
-            .build(),
-    )?;
-
-    buf.set_keymap(
-        api::types::Mode::Insert,
-        "<S-Tab>",
-        "",
-        &SetKeymapOpts::builder()
-            .noremap(true)
-            .silent(true)
-            .callback(move |_| handle_special_key("<S-Tab>", &api::get_current_buf()))
-            .build(),
-    )?;
-
-    buf.set_keymap(
-        api::types::Mode::Insert,
-        "<C-w>",
-        "",
-        &SetKeymapOpts::builder()
-            .noremap(true)
-            .silent(true)
-            .callback(move |_| handle_special_key("<C-w>", &api::get_current_buf()))
-            .build(),
-    )?;
-
-    buf.set_keymap(
-        api::types::Mode::Insert,
-        // This is actually <C-BS>, but nvim sees it as this character (use <C-v>, <C-BS>
-        // and see for yourself.
-        "",
-        "",
-        &SetKeymapOpts::builder()
-            .noremap(true)
-            .silent(true)
-            .callback(move |_| handle_special_key("", &api::get_current_buf()))
-            .build(),
-    )?;
+    for k in SPECIAL_KEYMAPS.keys() {
+        buf.set_keymap(
+            api::types::Mode::Insert,
+            &k,
+            "",
+            &SetKeymapOpts::builder()
+                .noremap(true)
+                .silent(true)
+                .callback(move |_| handle_special_key(&k, &api::get_current_buf()))
+                .build(),
+        )?;
+    }
 
     Ok(())
 }

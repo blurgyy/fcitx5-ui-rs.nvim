@@ -144,12 +144,14 @@ pub fn process_candidate_updates(
                 let candidate_window = get_candidate_window();
                 let mut candidate_window_guard = candidate_window.lock().unwrap();
                 if let Some(window) = candidate_window_guard.take() {
-                    if window.is_valid() {
-                        oxi::schedule(move |_| match window.close(true) {
-                            Ok(_) => {}
-                            Err(e) => eprintln!("Error closing window: {}", e),
-                        });
-                    }
+                    oxi::schedule(move |_| {
+                        if window.is_valid() {
+                            match window.close(true) {
+                                Ok(_) => {}
+                                Err(e) => eprintln!("Error closing window: {}", e),
+                            }
+                        }
+                    });
                 }
             }
             UpdateType::UpdateContent => {

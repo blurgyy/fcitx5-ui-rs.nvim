@@ -86,14 +86,6 @@ impl CandidateState {
         }
     }
 
-    /// Reset the candidate state
-    pub fn reset(&mut self) {
-        self.candidates.clear();
-        self.selected_index = 0;
-        self.preedit_text.clear();
-        self.is_visible = false;
-    }
-
     /// Calculate the optimal width for the window based on content
     fn calculate_window_dimensions(&self) -> (u32, u32) {
         // Calculate width based on content
@@ -251,17 +243,12 @@ impl CandidateState {
                                 candidate_window_guard.replace(window)
                             {
                                 if old_window.is_valid() {
-                                    oxi::schedule(move |_| {
-                                        match old_window.close(true) {
-                                            Ok(_) => {}
-                                            Err(e) => {
-                                                oxi::print!(
-                                                    "Error closing window: {}",
-                                                    e
-                                                );
-                                            }
+                                    match old_window.close(true) {
+                                        Ok(_) => {}
+                                        Err(e) => {
+                                            oxi::print!("Error closing window: {}", e);
                                         }
-                                    });
+                                    }
                                 }
                             }
                         }
@@ -366,9 +353,7 @@ impl CandidateState {
 
     // Rather than directly showing/hiding, mark for update
     pub fn mark_for_show(&mut self) {
-        if !self.candidates.is_empty() {
-            self.update_queue.push_back(UpdateType::Show);
-        }
+        self.update_queue.push_back(UpdateType::Show);
     }
 
     pub fn mark_for_hide(&mut self) {
@@ -410,10 +395,14 @@ pub fn setup_candidate_receivers(
 
                                 // Convert candidate data from Fcitx5 format
                                 let mut candidates = Vec::new();
-                                for (display, text) in args.candidates {
+                                // NOTE: using `args.candidates` instead of
+                                // `args.candidates()` here seems to lead to more race
+                                // condition?  So we are using the latter (the method
+                                // call) here.
+                                for (display, text) in args.candidates() {
                                     candidates.push(Candidate {
-                                        display: display.to_owned(),
-                                        text: text.to_owned(),
+                                        display: display.to_string(),
+                                        text: text.to_string(),
                                     });
                                 }
 
@@ -437,7 +426,8 @@ pub fn setup_candidate_receivers(
                                         usize::try_from(cursor_idx).unwrap_or(0);
                                     // args.cursor_idx().try_into().unwrap_or(0);
 
-                                    // Mark for update based on whether we have candidates
+                                    // Mark for update based on whether we have
+                                    // candidates
                                     if !guard.candidates.is_empty() {
                                         guard.mark_for_show();
                                     } else {
@@ -474,8 +464,6 @@ pub fn setup_candidate_receivers(
 
                             // When a string is committed, mark for hiding
                             if let Ok(mut guard) = candidate_state.lock() {
-                                guard.reset();
-                                guard.mark_for_hide();
                                 // Insert, if anything
                                 if !text_to_insert.is_empty() {
                                     guard.mark_for_insert(args.text.to_owned());

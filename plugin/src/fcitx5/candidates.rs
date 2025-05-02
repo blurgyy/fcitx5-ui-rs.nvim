@@ -229,11 +229,11 @@ impl CandidateState {
                     match api::open_win(&buffer, false, &opts) {
                         Ok(window) => {
                             // Set window options
-                            let _ = set_option_value(
-                                "winblend",
-                                15,
-                                &OptionOpts::builder().win(window.clone()).build(),
-                            );
+                            // let _ = set_option_value(
+                            //     "winblend",
+                            //     15,
+                            //     &OptionOpts::builder().win(window.clone()).build(),
+                            // );
                             let _ = set_option_value(
                                 "wrap",
                                 true,
@@ -277,7 +277,9 @@ impl CandidateState {
 
         // Add preedit text at the top with better formatting
         if !self.preedit_text.is_empty() {
-            lines.push(format!("   {}", self.preedit_text));
+            // \u{fe0f} here is not critical for preserving the full-width keyboard
+            // symbol.  The critical factor is to **not** use winblend.
+            lines.push(format!(" \u{f11c}\u{fe0f}  {}", self.preedit_text));
             lines.push("─".repeat(width as usize));
         }
 

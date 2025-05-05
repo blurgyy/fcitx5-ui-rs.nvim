@@ -289,6 +289,15 @@ impl IMWindowState {
 
     /// Update the candidate window display
     pub fn update_buffer(&mut self) -> oxi::Result<()> {
+        // Delete the buffer and skip if there is nothing to show
+        if self.aux_up_str.is_empty()
+            && self.candidates.is_empty()
+            && self.preedit_text.is_empty()
+        {
+            self.buffer = None;
+            return Ok(());
+        }
+
         // Make sure the buffer exists
         let buffer = match self.buffer {
             Some(ref buffer) => buffer.clone(),

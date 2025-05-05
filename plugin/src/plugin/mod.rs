@@ -36,6 +36,10 @@ lazy_static::lazy_static! {
                 let state_guard = state.lock().unwrap();
                 let im_window_state = state_guard.im_window_state.clone();
                 let mut im_window_guard = im_window_state.lock().unwrap();
+                if im_window_guard.is_showing_current_im() {
+                    do_feedkeys_noremap("<CR>")?;
+                    return Ok(());
+                }
                 let insert_text = im_window_guard
                     .preedit_text
                     .replace([' ', CURSOR_INDICATOR], "")
@@ -59,7 +63,8 @@ lazy_static::lazy_static! {
                 let im_window_state = state_guard.im_window_state.clone();
                 let im_window_guard = im_window_state.lock().unwrap();
                 if im_window_guard.is_showing_current_im() {
-                    do_feedkeys_noremap("<esc>")?;
+                    do_feedkeys_noremap("<Esc>")?;
+                    return Ok(());
                 }
                 drop(im_window_guard);
                 oxi::schedule(move |_| process_im_window_updates(im_window_state));

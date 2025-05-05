@@ -54,6 +54,8 @@ pub struct CandidateState {
     pub buffer: Option<Buffer>,
     /// Current preedit text
     pub preedit_text: String,
+    /// joined `aux_up_strs` from fcitx5's `update_client_side_ui` DBus message
+    pub aux_up_str: String,
     /// Has previous page
     pub has_prev: bool,
     /// Has next page
@@ -71,6 +73,7 @@ impl CandidateState {
             selected_index: 0,
             buffer: None,
             preedit_text: String::new(),
+            aux_up_str: String::new(),
             has_prev: false,
             has_next: false,
             is_visible: false,
@@ -88,8 +91,19 @@ impl CandidateState {
 
     /// Calculate the optimal width for the window based on content
     fn calculate_window_dimensions(&self) -> (u32, u32) {
+        if !self.aux_up_str.is_empty()
+            && self.preedit_text.is_empty()
+            && self.candidates.is_empty()
+        {
+            return (2, 1);
+        }
+
         // Calculate width based on content
-        let mut width = 30; // Start with reasonable default
+        let mut width = if self.aux_up_str.is_empty() {
+            30
+        } else {
+            self.aux_up_str.len().try_into().unwrap_or(30)
+        }; // Start with reasonable default
 
         if !self.candidates.is_empty() {
             // Find the longest candidate text
@@ -200,22 +214,36 @@ impl CandidateState {
 
         // Create the floating window for candidates if needed
         let candidate_window = get_candidate_window();
-        let candidate_window_guard = candidate_window.lock().unwrap();
-        if candidate_window_guard.is_none() {
-            // Create window options
-            let opts = WindowConfig::builder()
-                .relative(WindowRelativeTo::Cursor)
-                .zindex(0x7fff)
-                .row(1)
-                .col(0)
-                .width(width)
-                .height(height)
-                .focusable(false)
+        let mut candidate_window_guard = candidate_window.lock().unwrap();
+
+        // Create window options
+        let mut opts_builder = WindowConfig::builder();
+        let opts_builder = opts_builder
+            .relative(WindowRelativeTo::Cursor)
+            .zindex(0x7fff)
+            .row(1)
+            .col(0)
+            .width(width)
+            .height(height)
+            .focusable(false)
+            .style(WindowStyle::Minimal);
+        let opts_builder = if width > 2 && height > 1 {
+            opts_builder
                 .title(WindowTitle::SimpleString(" Fcitx5 ".to_owned().into()))
                 .title_pos(WindowTitlePosition::Center)
-                .style(WindowStyle::Minimal)
-                .build();
+        } else {
+            opts_builder
+        };
+        let opts = opts_builder.build();
 
+        if candidate_window_guard.is_some() {
+            if let Some(ref mut window) = candidate_window_guard.take() {
+                if window.is_valid() {
+                    let _ = window.set_config(&opts);
+                    candidate_window_guard.replace(window.clone());
+                }
+            }
+        } else {
             // Open the window with our buffer
             drop(candidate_window_guard);
             oxi::schedule({
@@ -275,6 +303,13 @@ impl CandidateState {
 
         // Generate content for the candidate window
         let mut lines = Vec::new();
+
+        if !self.aux_up_str.is_empty() {
+            lines.push(self.aux_up_str.clone());
+            if !self.preedit_text.is_empty() || !self.candidates.is_empty() {
+                lines.push("─".repeat(width as usize));
+            }
+        }
 
         // Add preedit text at the top with better formatting
         if !self.preedit_text.is_empty() {
@@ -395,8 +430,13 @@ pub fn setup_candidate_receivers(
 
                                 // Extract preedit text
                                 let mut preedit_text = String::new();
-                                for (text, _) in &args.preedit_strs {
+                                for (text, _) in args.preedit_strs() {
                                     preedit_text.push_str(text);
+                                }
+
+                                let mut aux_up_str = String::new();
+                                for (text, _) in args.aux_up_strs() {
+                                    aux_up_str.push_str(text);
                                 }
 
                                 if let Ok(pos) = args.preedit_cursor.try_into() {
@@ -407,6 +447,7 @@ pub fn setup_candidate_receivers(
                                 if let Ok(mut guard) = candidate_state.lock() {
                                     guard.update_candidates(&candidates);
                                     guard.preedit_text = preedit_text;
+                                    guard.aux_up_str = aux_up_str;
                                     guard.has_prev = args.has_prev;
                                     guard.has_next = args.has_next;
                                     guard.selected_index =
@@ -415,7 +456,9 @@ pub fn setup_candidate_receivers(
 
                                     // Mark for update based on whether we have
                                     // candidates
-                                    if !guard.candidates.is_empty() {
+                                    if !guard.aux_up_str.is_empty()
+                                        || !guard.candidates.is_empty()
+                                    {
                                         guard.mark_for_show();
                                     } else {
                                         guard.mark_for_hide();

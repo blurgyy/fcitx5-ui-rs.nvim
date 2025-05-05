@@ -156,6 +156,7 @@ pub fn process_candidate_updates(
             }
             UpdateType::UpdateContent => {
                 guard.update_buffer()?;
+                guard.display_window()?;
             }
             UpdateType::Insert(s) => {
                 // NB: must use oxi::schedule here, otherwise it hangs/segfaults at runtime

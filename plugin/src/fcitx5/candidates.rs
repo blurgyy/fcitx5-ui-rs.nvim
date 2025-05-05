@@ -187,15 +187,12 @@ impl CandidateState {
     }
 
     /// Setup the candidate window
-    pub fn setup_window(&mut self) -> oxi::Result<()> {
-        // Make sure the buffer exists
-        let buffer = match self.buffer {
-            Some(ref buffer) => buffer.clone(),
-            None => {
-                let buffer = api::create_buf(false, true)?;
-                self.buffer = Some(buffer.clone());
-                buffer
-            }
+    pub fn display_window(&mut self) -> oxi::Result<()> {
+        // do not show window if buffer does not exist
+        let buffer = if let Some(buffer) = self.buffer.as_ref() {
+            buffer
+        } else {
+            return Ok(());
         };
 
         // Calculate both width and height for initial setup
@@ -262,15 +259,19 @@ impl CandidateState {
     }
 
     /// Update the candidate window display
-    pub fn update_display(&mut self) -> oxi::Result<()> {
-        if self.buffer.is_none() {
-            return Ok(());
-        }
-
-        let buffer = self.buffer.as_ref().unwrap().clone();
+    pub fn update_buffer(&mut self) -> oxi::Result<()> {
+        // Make sure the buffer exists
+        let buffer = match self.buffer {
+            Some(ref buffer) => buffer.clone(),
+            None => {
+                let buffer = api::create_buf(false, true)?;
+                self.buffer = Some(buffer.clone());
+                buffer
+            }
+        };
 
         // Calculate dimensions
-        let (width, height) = self.calculate_window_dimensions();
+        let (width, _height) = self.calculate_window_dimensions();
 
         // Generate content for the candidate window
         let mut lines = Vec::new();
@@ -330,22 +331,6 @@ impl CandidateState {
 
                 if let Ok(line_count) = buffer.line_count() {
                     let _ = buffer.set_lines(0..line_count, true, lines);
-                }
-            }
-        });
-
-        oxi::schedule(move |_| {
-            // Get candidate window
-            if let Ok(mut guard) = get_candidate_window().lock() {
-                if let Some(window) = guard.as_mut() {
-                    if window.is_valid() {
-                        // Create config with new dimensions
-                        let config =
-                            WindowConfig::builder().width(width).height(height).build();
-
-                        // Apply new dimensions
-                        let _ = window.set_config(&config);
-                    }
                 }
             }
         });

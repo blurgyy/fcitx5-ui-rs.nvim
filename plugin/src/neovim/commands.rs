@@ -136,8 +136,8 @@ pub fn process_candidate_updates(
         match update_type {
             UpdateType::Show => {
                 guard.is_visible = true;
-                guard.setup_window()?;
-                guard.update_display()?;
+                guard.update_buffer()?;
+                guard.display_window()?;
             }
             UpdateType::Hide => {
                 guard.is_visible = false;
@@ -155,7 +155,7 @@ pub fn process_candidate_updates(
                 }
             }
             UpdateType::UpdateContent => {
-                guard.update_display()?;
+                guard.update_buffer()?;
             }
             UpdateType::Insert(s) => {
                 // NB: must use oxi::schedule here, otherwise it hangs/segfaults at runtime

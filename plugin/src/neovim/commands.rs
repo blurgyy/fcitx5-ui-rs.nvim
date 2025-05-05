@@ -9,18 +9,18 @@ use nvim_oxi::{
 };
 
 use crate::{
-    fcitx5::candidates::setup_candidate_receivers,
+    fcitx5::candidates::setup_im_window_receivers,
     ignore_dbus_no_interface_error,
-    plugin::{get_candidate_state, PLUGIN_NAME},
+    plugin::{get_im_window_state, PLUGIN_NAME},
 };
 use crate::{
-    fcitx5::candidates::CandidateState, neovim::autocmds::register_autocommands,
+    fcitx5::candidates::IMWindowState, neovim::autocmds::register_autocommands,
 };
 use crate::{
     fcitx5::{candidates::UpdateType, connection::prepare},
     plugin::Fcitx5Plugin,
 };
-use crate::{plugin::get_candidate_window, utils::as_api_error};
+use crate::{plugin::get_im_window, utils::as_api_error};
 use crate::{plugin::get_state, utils::do_feedkeys_noremap};
 
 use super::{autocmds::deregister_autocommands, keymaps::register_keymaps};
@@ -127,11 +127,11 @@ pub fn register_commands() -> oxi::Result<()> {
 }
 
 // Process updates when scheduled
-pub fn process_candidate_updates(
-    candidate_state: Arc<Mutex<CandidateState>>,
+pub fn process_im_window_updates(
+    im_window_state: Arc<Mutex<IMWindowState>>,
 ) -> oxi::Result<()> {
     // Get the state and check for pending updates
-    let mut guard = candidate_state.lock().unwrap();
+    let mut guard = im_window_state.lock().unwrap();
     while let Some(update_type) = guard.pop_update() {
         match update_type {
             UpdateType::Show => {
@@ -141,9 +141,9 @@ pub fn process_candidate_updates(
             }
             UpdateType::Hide => {
                 guard.is_visible = false;
-                let candidate_window = get_candidate_window();
-                let mut candidate_window_guard = candidate_window.lock().unwrap();
-                if let Some(window) = candidate_window_guard.take() {
+                let im_window = get_im_window();
+                let mut im_window_guard = im_window.lock().unwrap();
+                if let Some(window) = im_window_guard.take() {
                     oxi::schedule(move |_| {
                         if window.is_valid() {
                             match window.close(true) {
@@ -207,7 +207,7 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result
     };
 
     // Get a reference to the candidate state for setup
-    let candidate_state = state_guard.candidate_state.clone();
+    let im_window_state = state_guard.im_window_state.clone();
 
     // Store in state
     state_guard
@@ -217,10 +217,10 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result
     ignore_dbus_no_interface_error!(state_guard.deactivate_im(buf));
 
     let trigger =
-        AsyncHandle::new(move || process_candidate_updates(get_candidate_state()))?;
+        AsyncHandle::new(move || process_im_window_updates(get_im_window_state()))?;
 
     // Setup candidate receivers
-    setup_candidate_receivers(&ctx, candidate_state, trigger.clone())
+    setup_im_window_receivers(&ctx, im_window_state, trigger.clone())
         .map_err(as_api_error)?;
 
     // if already in insert mode, set the im

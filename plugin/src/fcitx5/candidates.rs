@@ -25,7 +25,7 @@ use std::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::plugin::get_candidate_window;
+use crate::plugin::get_im_window;
 use crate::utils::CURSOR_INDICATOR;
 
 /// Structure for an input method candidate
@@ -45,7 +45,7 @@ pub enum UpdateType {
 
 /// State for candidate selection UI
 #[derive(Clone, Debug)]
-pub struct CandidateState {
+pub struct IMWindowState {
     /// Current input method candidates
     pub candidates: Vec<Candidate>,
     /// Index of the currently selected candidate
@@ -66,7 +66,7 @@ pub struct CandidateState {
     pub update_queue: VecDeque<UpdateType>,
 }
 
-impl CandidateState {
+impl IMWindowState {
     pub fn new() -> Self {
         Self {
             candidates: Vec::new(),
@@ -147,7 +147,7 @@ impl CandidateState {
 
                 // Apply hysteresis to prevent small oscillations
                 // Only change size if it would be at least 4 chars different
-                if let Some(window) = get_candidate_window().lock().unwrap().as_ref() {
+                if let Some(window) = get_im_window().lock().unwrap().as_ref() {
                     if window.is_valid() {
                         if let Ok(config) = window.get_config() {
                             let current_width = config.width.unwrap_or(0);
@@ -213,8 +213,8 @@ impl CandidateState {
         let (width, height) = self.calculate_window_dimensions();
 
         // Create the floating window for candidates if needed
-        let candidate_window = get_candidate_window();
-        let mut candidate_window_guard = candidate_window.lock().unwrap();
+        let im_window = get_im_window();
+        let mut im_window_guard = im_window.lock().unwrap();
 
         // Create window options
         let mut opts_builder = WindowConfig::builder();
@@ -236,21 +236,21 @@ impl CandidateState {
         };
         let opts = opts_builder.build();
 
-        if candidate_window_guard.is_some() {
-            if let Some(ref mut window) = candidate_window_guard.take() {
+        if im_window_guard.is_some() {
+            if let Some(ref mut window) = im_window_guard.take() {
                 if window.is_valid() {
                     let _ = window.set_config(&opts);
-                    candidate_window_guard.replace(window.clone());
+                    im_window_guard.replace(window.clone());
                 }
             }
         } else {
             // Open the window with our buffer
-            drop(candidate_window_guard);
+            drop(im_window_guard);
             oxi::schedule({
-                let candidate_window = candidate_window.clone();
+                let im_window = im_window.clone();
                 let buffer = buffer.clone();
                 move |_| {
-                    let mut candidate_window_guard = candidate_window.lock().unwrap();
+                    let mut im_window_guard = im_window.lock().unwrap();
                     match api::open_win(&buffer, false, &opts) {
                         Ok(window) => {
                             // Set window options
@@ -264,9 +264,7 @@ impl CandidateState {
                                 true,
                                 &OptionOpts::builder().win(window.clone()).build(),
                             );
-                            if let Some(old_window) =
-                                candidate_window_guard.replace(window)
-                            {
+                            if let Some(old_window) = im_window_guard.replace(window) {
                                 if old_window.is_valid() {
                                     match old_window.close(true) {
                                         Ok(_) => {}
@@ -396,16 +394,16 @@ impl CandidateState {
 }
 
 /// Setup message receivers to listen for Fcitx5 candidate updates
-pub fn setup_candidate_receivers(
+pub fn setup_im_window_receivers(
     ctx: &InputContextProxyBlocking<'static>,
-    candidate_state: Arc<Mutex<CandidateState>>,
+    im_window_state: Arc<Mutex<IMWindowState>>,
     trigger: AsyncHandle,
 ) -> Result<()> {
     // Spawn thread to handle update signals
     std::thread::spawn({
         let trigger = trigger.clone();
         let update_ctx = ctx.clone();
-        let candidate_state = candidate_state.clone();
+        let im_window_state = im_window_state.clone();
         move || {
             match update_ctx.receive_update_client_side_ui() {
                 Ok(update_signal) => {
@@ -444,7 +442,7 @@ pub fn setup_candidate_receivers(
                                 }
 
                                 // Update our candidate state
-                                if let Ok(mut guard) = candidate_state.lock() {
+                                if let Ok(mut guard) = im_window_state.lock() {
                                     guard.update_candidates(&candidates);
                                     guard.preedit_text = preedit_text;
                                     guard.aux_up_str = aux_up_str;
@@ -483,7 +481,7 @@ pub fn setup_candidate_receivers(
     std::thread::spawn({
         let trigger = trigger.clone();
         let commit_ctx = ctx.clone();
-        let candidate_state = candidate_state.clone();
+        let im_window_state = im_window_state.clone();
 
         move || {
             match commit_ctx.receive_commit_string() {
@@ -493,7 +491,7 @@ pub fn setup_candidate_receivers(
                             let text_to_insert = args.text.to_owned();
 
                             // When a string is committed, mark for hiding
-                            if let Ok(mut guard) = candidate_state.lock() {
+                            if let Ok(mut guard) = im_window_state.lock() {
                                 // Insert, if anything
                                 if !text_to_insert.is_empty() {
                                     guard.mark_for_insert(args.text.to_owned());

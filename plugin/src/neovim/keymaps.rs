@@ -7,19 +7,19 @@ use nvim_oxi::{
 
 use crate::{
     plugin::{
-        get_candidate_state, get_state, Fcitx5Plugin, KEYMAPS, PASSTHROUGH_KEYMAPS,
+        get_im_window_state, get_state, Fcitx5Plugin, KEYMAPS, PASSTHROUGH_KEYMAPS,
         PLUGIN_NAME,
     },
     utils::{as_api_error, do_feedkeys_noremap},
 };
 
-use super::commands::process_candidate_updates;
+use super::commands::process_im_window_updates;
 
 fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
     let state = get_state();
     let state_guard = state.lock().unwrap();
-    let candidate_guard = state_guard.candidate_state.lock().unwrap();
-    if !candidate_guard.is_visible {
+    let im_window_guard = state_guard.im_window_state.lock().unwrap();
+    if !im_window_guard.is_visible {
         // call the original keymap, if there is one
         if let Some(buf_keymaps) =
             state_guard.existing_keymaps_insert.get(&buf.handle())
@@ -65,7 +65,7 @@ fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
         return Ok(());
     }
 
-    drop(candidate_guard);
+    drop(im_window_guard);
     drop(state_guard);
 
     match nvim_keycode.to_lowercase().as_str() {
@@ -77,11 +77,11 @@ fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
             });
             ctx.process_key_event(*key_code, 0, *key_state, false, 0)
                 .map_err(as_api_error)?;
-            let mut candidate_guard = state_guard.candidate_state.lock().unwrap();
-            candidate_guard.mark_for_update();
-            drop(candidate_guard);
+            let mut im_window_guard = state_guard.im_window_state.lock().unwrap();
+            im_window_guard.mark_for_update();
+            drop(im_window_guard);
             drop(state_guard);
-            process_candidate_updates(get_candidate_state())?;
+            process_im_window_updates(get_im_window_state())?;
             Ok(())
         }
         key @ _ if KEYMAPS.keys().any(|k| k.to_lowercase() == key) => {

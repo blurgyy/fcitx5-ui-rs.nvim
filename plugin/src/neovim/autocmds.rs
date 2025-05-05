@@ -13,7 +13,7 @@ use nvim_oxi::{
 
 use crate::plugin::{get_state, Fcitx5Plugin};
 use crate::utils::as_api_error;
-use crate::{ignore_dbus_no_interface_error, plugin::get_candidate_state};
+use crate::{ignore_dbus_no_interface_error, plugin::get_im_window_state};
 use std::sync::{Arc, Mutex};
 
 /// Setup autocommands for input method switching
@@ -145,7 +145,7 @@ pub fn setup_insert_char_pre(trigger: AsyncHandle, buf: &Buffer) -> oxi::Result<
     drop(state_guard);
 
     // Get a reference to the candidate state
-    let candidate_state = get_candidate_state();
+    let im_window_state = get_im_window_state();
 
     let opts = CreateAutocmdOpts::builder()
         .buffer(Buffer::current())
@@ -165,8 +165,8 @@ pub fn setup_insert_char_pre(trigger: AsyncHandle, buf: &Buffer) -> oxi::Result<
             }
 
             // Clone state for use inside callback
-            let candidate_state_clone = candidate_state.clone();
-            let mut guard = candidate_state_clone.lock().unwrap();
+            let im_window_state_clone = im_window_state.clone();
+            let mut guard = im_window_state_clone.lock().unwrap();
 
             // Get the first character (should be only one)
             let c = char_arg.chars().next().unwrap();

@@ -16,7 +16,7 @@ use nvim_oxi::{
 };
 
 use crate::{
-    fcitx5::candidates::CandidateState, neovim::commands::process_candidate_updates,
+    fcitx5::candidates::IMWindowState, neovim::commands::process_im_window_updates,
     utils::CURSOR_INDICATOR,
 };
 use crate::{ignore_dbus_no_interface_error, utils::as_api_error};
@@ -33,18 +33,18 @@ lazy_static::lazy_static! {
             "<cr>".to_owned(),
             Box::new(move |state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer| {
                 let state_guard = state.lock().unwrap();
-                let candidate_state = state_guard.candidate_state.clone();
-                let mut candidate_guard = candidate_state.lock().unwrap();
-                let insert_text = candidate_guard
+                let im_window_state = state_guard.im_window_state.clone();
+                let mut im_window_guard = im_window_state.lock().unwrap();
+                let insert_text = im_window_guard
                     .preedit_text
                     .replace([' ', CURSOR_INDICATOR], "")
                     .clone();
-                candidate_guard.mark_for_insert(insert_text);
+                im_window_guard.mark_for_insert(insert_text);
                 ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
-                drop(candidate_guard);
+                drop(im_window_guard);
                 oxi::schedule({
-                    let candidate_state = candidate_state.clone();
-                    move |_| process_candidate_updates(candidate_state.clone())
+                    let im_window_state = im_window_state.clone();
+                    move |_| process_im_window_updates(im_window_state.clone())
                 });
                 Ok(())
             }
@@ -55,7 +55,7 @@ lazy_static::lazy_static! {
             Box::new(move |state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer| {
                 let state_guard = state.lock().unwrap();
                 ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
-                oxi::schedule(move |_| process_candidate_updates(get_candidate_state()));
+                oxi::schedule(move |_| process_im_window_updates(get_im_window_state()));
                 Ok(())
             }
         ));
@@ -86,8 +86,8 @@ pub struct Fcitx5Plugin {
     pub ctx: HashMap<i32, InputContextProxyBlocking<'static>>,
     /// Per-buffer augroup_id
     pub augroup_id: HashMap<i32, u32>,
-    pub candidate_state: Arc<Mutex<CandidateState>>,
-    pub candidate_window: Arc<Mutex<Option<nvim_oxi::api::Window>>>,
+    pub im_window_state: Arc<Mutex<IMWindowState>>,
+    pub im_window: Arc<Mutex<Option<nvim_oxi::api::Window>>>,
     pub existing_keymaps_insert: HashMap<i32, BufferOriginalKeymaps>,
 }
 
@@ -99,8 +99,8 @@ impl Fcitx5Plugin {
             keymaps_registered: HashMap::new(),
             ctx: HashMap::new(),
             augroup_id: HashMap::new(),
-            candidate_state: Arc::new(Mutex::new(CandidateState::new())),
-            candidate_window: Arc::new(Mutex::new(None)),
+            im_window_state: Arc::new(Mutex::new(IMWindowState::new())),
+            im_window: Arc::new(Mutex::new(None)),
             existing_keymaps_insert: HashMap::new(),
         }
     }
@@ -202,15 +202,15 @@ pub fn get_state() -> Arc<Mutex<Fcitx5Plugin>> {
 }
 
 // Get a reference to just the candidate state
-pub fn get_candidate_state() -> Arc<Mutex<CandidateState>> {
+pub fn get_im_window_state() -> Arc<Mutex<IMWindowState>> {
     let state = get_state();
     let state_guard = state.lock().unwrap();
-    state_guard.candidate_state.clone()
+    state_guard.im_window_state.clone()
 }
 
 // Get a reference to just the candidate Option<Window>
-pub fn get_candidate_window() -> Arc<Mutex<Option<nvim_oxi::api::Window>>> {
+pub fn get_im_window() -> Arc<Mutex<Option<nvim_oxi::api::Window>>> {
     let state = get_state();
     let state_guard = state.lock().unwrap();
-    state_guard.candidate_window.clone()
+    state_guard.im_window.clone()
 }

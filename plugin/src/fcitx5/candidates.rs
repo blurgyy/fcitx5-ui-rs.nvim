@@ -81,6 +81,12 @@ impl IMWindowState {
         }
     }
 
+    pub fn is_showing_current_im(&self) -> bool {
+        !self.aux_up_str.is_empty()
+            && self.preedit_text.is_empty()
+            && self.candidates.is_empty()
+    }
+
     /// Update candidates list
     pub fn update_candidates(&mut self, candidates: &[Candidate]) {
         self.candidates = candidates.to_owned();
@@ -91,10 +97,7 @@ impl IMWindowState {
 
     /// Calculate the optimal width for the window based on content
     fn calculate_window_dimensions(&self) -> (u32, u32) {
-        if !self.aux_up_str.is_empty()
-            && self.preedit_text.is_empty()
-            && self.candidates.is_empty()
-        {
+        if self.is_showing_current_im() {
             return (2, 1);
         }
 

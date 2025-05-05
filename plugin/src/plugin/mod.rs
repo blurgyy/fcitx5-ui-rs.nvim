@@ -16,8 +16,9 @@ use nvim_oxi::{
 };
 
 use crate::{
-    fcitx5::candidates::IMWindowState, neovim::commands::process_im_window_updates,
-    utils::CURSOR_INDICATOR,
+    fcitx5::candidates::IMWindowState,
+    neovim::commands::process_im_window_updates,
+    utils::{do_feedkeys_noremap, CURSOR_INDICATOR},
 };
 use crate::{ignore_dbus_no_interface_error, utils::as_api_error};
 
@@ -55,7 +56,13 @@ lazy_static::lazy_static! {
             Box::new(move |state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer| {
                 let state_guard = state.lock().unwrap();
                 ignore_dbus_no_interface_error!(state_guard.reset_im_ctx(buf));
-                oxi::schedule(move |_| process_im_window_updates(get_im_window_state()));
+                let im_window_state = state_guard.im_window_state.clone();
+                let im_window_guard = im_window_state.lock().unwrap();
+                if im_window_guard.is_showing_current_im() {
+                    do_feedkeys_noremap("<esc>")?;
+                }
+                drop(im_window_guard);
+                oxi::schedule(move |_| process_im_window_updates(im_window_state));
                 Ok(())
             }
         ));

@@ -44,6 +44,7 @@ pub fn register_autocommands(
 
     let opts = CreateAutocmdOpts::builder()
         .group(augroup_id)
+        .buffer(buf.clone())
         .desc("Switch to Pinyin input method when entering insert mode")
         .callback({
             let state_ref = state.clone();
@@ -67,6 +68,7 @@ pub fn register_autocommands(
 
     let opts = CreateAutocmdOpts::builder()
         .group(augroup_id)
+        .buffer(buf.clone())
         .desc("Switch to English input method when leaving insert mode")
         .callback({
             let state_ref = state.clone();
@@ -85,6 +87,7 @@ pub fn register_autocommands(
 
     let opts = CreateAutocmdOpts::builder()
         .buffer(Buffer::current())
+        .buffer(buf.clone())
         .group(augroup_id)
         .desc("Reset input context when leaving window or buffer")
         .callback({
@@ -148,7 +151,7 @@ pub fn setup_insert_char_pre(trigger: AsyncHandle, buf: &Buffer) -> oxi::Result<
     let im_window_state = get_im_window_state();
 
     let opts = CreateAutocmdOpts::builder()
-        .buffer(Buffer::current())
+        .buffer(buf.clone())
         .group(augroup_id)
         .desc("Process key events for Fcitx5 input method")
         .callback(move |_| {

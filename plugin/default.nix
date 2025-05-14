@@ -31,7 +31,7 @@ rustPlatform.buildRustPackage {
     outputHashes = {
       # TODO: use upstream again once <https://github.com/noib3/nvim-oxi/issues/226> is
       # resolved
-      "nvim-oxi-0.5.1" = "sha256-cMzqgiPbZQN4mUT0DRFHALpy82qZxWT99f71oKu+otY=";
+      "nvim-oxi-0.5.1" = "sha256-8gbFjdeh2VSPlJre8Dc9NsKUnL4RprhtN5DUUFfJv5k=";
     };
   };
 

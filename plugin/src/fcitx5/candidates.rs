@@ -5,7 +5,7 @@ use fcitx5_dbus::{
     input_context::InputContextProxyBlocking,
     utils::key_event::KeyState as Fcitx5KeyState,
 };
-use nvim_oxi::api::opts::OptionOpts;
+use nvim_oxi::api::opts::{BufDeleteOptsBuilder, OptionOpts};
 use nvim_oxi::api::set_option_value;
 use nvim_oxi::{
     self as oxi,
@@ -294,19 +294,32 @@ impl IMWindowState {
             && self.candidates.is_empty()
             && self.preedit_text.is_empty()
         {
-            self.buffer = None;
+            if let Some(buffer) = self.buffer.take() {
+                // NB: must use schedule here, otherwise deadlock?
+                oxi::schedule(move |_| {
+                    let _ = buffer.delete(&BufDeleteOptsBuilder::default().build());
+                });
+            }
             return Ok(());
         }
 
         // Make sure the buffer exists
-        let buffer = match self.buffer {
-            Some(ref buffer) => buffer.clone(),
-            None => {
-                let buffer = api::create_buf(false, true)?;
-                self.buffer = Some(buffer.clone());
-                buffer
+        if self.buffer.is_none() {
+            if let Ok(buf) = api::create_buf(false, true) {
+                self.buffer = Some(buf);
+            } else {
+                match api::notify(
+                    "Failed creating scratch buffer for fcitx5 candidate window",
+                    api::types::LogLevel::Error,
+                    &oxi::Dictionary::new(),
+                ) {
+                    Ok(_) => {}
+                    Err(e) => eprintln!("Could not create scratch buffer for fcitx5 candidate window, and sending a notification also failed.  Sending notification error: {}", e),
+                }
             }
-        };
+        }
+
+        let buffer = self.buffer.as_ref().unwrap();
 
         // Calculate dimensions
         let (width, _height) = self.calculate_window_dimensions();

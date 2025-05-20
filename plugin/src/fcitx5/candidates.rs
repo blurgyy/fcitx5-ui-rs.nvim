@@ -476,8 +476,8 @@ pub fn setup_im_window_receivers(
                                 }
                                 let _ = trigger.send();
                             }
-                            Err(_) => {
-                                eprintln!("Error processing update signal");
+                            Err(e) => {
+                                eprintln!("Error processing update signal: {}", e);
                             }
                         }
                     }

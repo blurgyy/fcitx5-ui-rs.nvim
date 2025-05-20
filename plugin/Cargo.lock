@@ -149,9 +149,9 @@ checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 
 [[package]]
 name = "bitflags"
-version = "2.9.0"
+version = "2.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c8214115b7bf84099f1309324e63141d4c5d7cc26862f97a0a857dbefe165bd"
+checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 
 [[package]]
 name = "blocking"
@@ -228,9 +228,9 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "errno"
-version = "0.3.11"
+version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
+checksum = "cea14ef9355e3beab063703aa9dab15afd25f0667c341310c1e5274bb1d0da18"
 dependencies = [
  "libc",
  "windows-sys",
@@ -406,7 +406,7 @@ dependencies = [
 [[package]]
 name = "nvim-oxi"
 version = "0.5.1"
-source = "git+https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5#9cb49d9f53a646f8b1c377af4e146dec2d8dd06d"
+source = "git+https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5#f220f21fff578cab28c546555750a07d4d0e65ea"
 dependencies = [
  "nvim-oxi-api",
  "nvim-oxi-libuv",
@@ -419,7 +419,7 @@ dependencies = [
 [[package]]
 name = "nvim-oxi-api"
 version = "0.5.1"
-source = "git+https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5#9cb49d9f53a646f8b1c377af4e146dec2d8dd06d"
+source = "git+https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5#f220f21fff578cab28c546555750a07d4d0e65ea"
 dependencies = [
  "nvim-oxi-luajit",
  "nvim-oxi-macros",
@@ -432,7 +432,7 @@ dependencies = [
 [[package]]
 name = "nvim-oxi-libuv"
 version = "0.5.1"
-source = "git+https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5#9cb49d9f53a646f8b1c377af4e146dec2d8dd06d"
+source = "git+https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5#f220f21fff578cab28c546555750a07d4d0e65ea"
 dependencies = [
  "nvim-oxi-luajit",
  "thiserror",
@@ -441,7 +441,7 @@ dependencies = [
 [[package]]
 name = "nvim-oxi-luajit"
 version = "0.5.1"
-source = "git+https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5#9cb49d9f53a646f8b1c377af4e146dec2d8dd06d"
+source = "git+https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5#f220f21fff578cab28c546555750a07d4d0e65ea"
 dependencies = [
  "thiserror",
 ]
@@ -449,7 +449,7 @@ dependencies = [
 [[package]]
 name = "nvim-oxi-macros"
 version = "0.5.1"
-source = "git+https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5#9cb49d9f53a646f8b1c377af4e146dec2d8dd06d"
+source = "git+https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5#f220f21fff578cab28c546555750a07d4d0e65ea"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -459,7 +459,7 @@ dependencies = [
 [[package]]
 name = "nvim-oxi-types"
 version = "0.5.1"
-source = "git+https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5#9cb49d9f53a646f8b1c377af4e146dec2d8dd06d"
+source = "git+https://radicle.blurgy.xyz/z4Vpaxjd7ZsVPzyaRHQaaT4viHbn5#f220f21fff578cab28c546555750a07d4d0e65ea"
 dependencies = [
  "libc",
  "nvim-oxi-luajit",

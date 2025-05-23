@@ -17,15 +17,17 @@ macro_rules! ignore_dbus_no_interface_error {
                     "Unknown object '/org/freedesktop/portal/inputcontext/",
                 ) =>
             {
-                oxi::print!(
-                    "{}: Input context gone, maybe fcitx5 restarted.  Ignoring.",
-                    $crate::plugin::PLUGIN_NAME,
+                let _ = nvim_oxi::api::notify(
+                    "Input context gone, maybe fcitx5 restarted.  Ignoring.",
+                    api::types::LogLevel::Warn,
+                    &oxi::Dictionary::new(),
                 );
             }
             Err(e) => {
-                nvim_oxi::print!(
-                    "{}, Ignoring unhandled dbus error: {e:#?}",
-                    crate::plugin::PLUGIN_NAME,
+                let _ = nvim_oxi::api::notify(
+                    &format!("{}, Ignoring unhandled dbus error: {e:#?}", e),
+                    api::types::LogLevel::Warn,
+                    &oxi::Dictionary::new(),
                 );
             }
             _ => {}

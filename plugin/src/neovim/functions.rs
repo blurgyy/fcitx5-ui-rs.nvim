@@ -46,8 +46,10 @@ pub fn setup(config: PluginConfig) -> bool {
                     .build(),
             )
         }) {
-            oxi::print!(
-                "{PLUGIN_NAME}: Could not setup default enable keymap for '{on_key}': {e}"
+            let _ = api::notify(
+                &format!("{PLUGIN_NAME}: Could not setup default enable keymap for '{on_key}': {e}"),
+                api::types::LogLevel::Warn,
+                &oxi::Dictionary::new(),
             );
             return false;
         }

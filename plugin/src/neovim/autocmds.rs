@@ -12,7 +12,6 @@ use nvim_oxi::{
 };
 
 use crate::plugin::{get_state, Fcitx5Plugin};
-use crate::utils::as_api_error;
 use crate::{ignore_dbus_no_interface_error, plugin::get_im_window_state};
 use std::sync::{Arc, Mutex};
 
@@ -99,7 +98,7 @@ pub fn register_autocommands(
                 if !state_guard.initialized(&buf) {
                     return Ok(false);
                 }
-                ctx_clone.reset().map_err(as_api_error)?;
+                ignore_dbus_no_interface_error!(ctx_clone.reset());
                 Ok::<_, OxiError>(false) // NB: return false to keep this autocmd
             }
         })

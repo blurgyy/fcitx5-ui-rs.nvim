@@ -3,7 +3,9 @@ use nvim_oxi::{
     api::{self, opts::SetKeymapOpts},
 };
 
-use crate::plugin::{config::PluginConfig, get_state, PLUGIN_NAME};
+use crate::plugin::{
+    config::PluginConfig, get_im_window_state, get_state, PLUGIN_NAME,
+};
 
 use super::commands::toggle_plugin;
 
@@ -14,6 +16,27 @@ pub fn setup(config: PluginConfig) -> bool {
     state_guard.config = Some(config.clone());
     // drop to not block
     drop(state_guard);
+
+    // Create the global candidate buffer if it doesn't exist.
+    // This is a "safe" context for api::create_buf.
+    let im_window_state = get_im_window_state();
+    let mut im_state_guard = im_window_state.lock().unwrap();
+    if im_state_guard.buffer.is_none() {
+        match api::create_buf(false, true) {
+            Ok(buf) => {
+                im_state_guard.buffer = Some(buf);
+            }
+            Err(e) => {
+                let _ = api::notify(
+                    &format!("{PLUGIN_NAME}: Failed to create candidate buffer: {e}"),
+                    api::types::LogLevel::Error,
+                    &oxi::Dictionary::new(),
+                );
+                return false; // Indicate setup failure
+            }
+        }
+    }
+    drop(im_state_guard);
 
     // Initialize the plugin's commands
     if let Err(e) = crate::neovim::commands::register_commands() {

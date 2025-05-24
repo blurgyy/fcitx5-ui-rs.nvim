@@ -5,7 +5,7 @@ use fcitx5_dbus::{
     input_context::InputContextProxyBlocking,
     utils::key_event::KeyState as Fcitx5KeyState,
 };
-use nvim_oxi::api::opts::{BufDeleteOptsBuilder, OptionOpts};
+use nvim_oxi::api::opts::OptionOpts;
 use nvim_oxi::api::set_option_value;
 use nvim_oxi::{
     self as oxi,
@@ -206,10 +206,20 @@ impl IMWindowState {
     /// Setup the candidate window
     pub fn display_window(&mut self) -> oxi::Result<()> {
         // do not show window if buffer does not exist
-        let buffer = if let Some(buffer) = self.buffer.as_ref() {
-            buffer
-        } else {
-            return Ok(());
+        let buffer = match self.buffer.as_ref() {
+            Some(b) => b,
+            None => {
+                // This should ideally not happen if setup() correctly creates it.
+                let _ = api::notify(
+                    "Fcitx5: Candidate buffer not initialized for display_window. Please report this.",
+                    api::types::LogLevel::Error,
+                    &oxi::Dictionary::new(),
+                );
+                return Err(oxi::api::Error::Other(
+                    "Candidate buffer not initialized for display_window".into(),
+                )
+                .into());
+            }
         };
 
         // Calculate both width and height for initial setup
@@ -289,37 +299,34 @@ impl IMWindowState {
 
     /// Update the candidate window display
     pub fn update_buffer(&mut self) -> oxi::Result<()> {
-        // Delete the buffer and skip if there is nothing to show
+        // Delete the buffer and skip if there is nothing to show With persistent buffer,
+        // we don't delete it.
+        // If nothing to show, the buffer will be cleared / set with empty lines. The
+        // window hiding is handled by UpdateType::Hide.
         if self.aux_up_str.is_empty()
             && self.candidates.is_empty()
             && self.preedit_text.is_empty()
         {
-            if let Some(buffer) = self.buffer.take() {
-                // NB: must use schedule here, otherwise deadlock?
-                oxi::schedule(move |_| {
-                    let _ = buffer.delete(&BufDeleteOptsBuilder::default().build());
-                });
-            }
-            return Ok(());
+            // If nothing to show, we will effectively clear the buffer later by setting
+            // empty lines.
         }
 
         // Make sure the buffer exists
-        if self.buffer.is_none() {
-            if let Ok(buf) = api::create_buf(false, true) {
-                self.buffer = Some(buf);
-            } else {
-                match api::notify(
-                    "Failed creating scratch buffer for fcitx5 candidate window",
+        let buffer = match self.buffer.as_ref() {
+            Some(b) => b,
+            None => {
+                // This should ideally not happen if setup() correctly creates it.
+                let _ = api::notify(
+                    "Fcitx5: Candidate buffer not initialized in update_buffer. Please report this.",
                     api::types::LogLevel::Error,
                     &oxi::Dictionary::new(),
-                ) {
-                    Ok(_) => {}
-                    Err(e) => eprintln!("Could not create scratch buffer for fcitx5 candidate window, and sending a notification also failed.  Sending notification error: {}", e),
-                }
+                );
+                return Err(oxi::api::Error::Other(
+                    "Candidate buffer not initialized".into(),
+                )
+                .into());
             }
-        }
-
-        let buffer = self.buffer.as_ref().unwrap();
+        };
 
         // Calculate dimensions
         let (width, _height) = self.calculate_window_dimensions();

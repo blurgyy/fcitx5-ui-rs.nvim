@@ -19,7 +19,7 @@ fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
     let state = get_state();
     let state_guard = state.lock().unwrap();
     let im_window_guard = state_guard.im_window_state.lock().unwrap();
-    if !im_window_guard.is_visible {
+    if !im_window_guard.is_visible || im_window_guard.is_showing_current_im() {
         // call the original keymap, if there is one
         if let Some(buf_keymaps) =
             state_guard.existing_keymaps_insert.get(&buf.handle())
@@ -71,13 +71,13 @@ fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
     match nvim_keycode.to_lowercase().as_str() {
         key @ _ if PASSTHROUGH_KEYMAPS.keys().any(|k| k.to_lowercase() == key) => {
             let state_guard = state.lock().unwrap();
+            let mut im_window_guard = state_guard.im_window_state.lock().unwrap();
             let ctx = state_guard.ctx.get(&buf.handle()).unwrap();
             let (key_state, key_code) = PASSTHROUGH_KEYMAPS.get(key).unwrap_or_else(|| {
                 unreachable!("{PLUGIN_NAME}: A key '{key}' is supplied, but there has not been a mapping defined for it!")
             });
             ctx.process_key_event(*key_code, 0, *key_state, false, 0)
                 .map_err(as_api_error)?;
-            let mut im_window_guard = state_guard.im_window_state.lock().unwrap();
             im_window_guard.mark_for_update();
             drop(im_window_guard);
             drop(state_guard);

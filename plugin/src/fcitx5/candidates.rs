@@ -25,7 +25,7 @@ use std::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::plugin::get_im_window;
+use crate::plugin::{get_im_window, PLUGIN_NAME};
 use crate::utils::CURSOR_INDICATOR;
 
 /// Structure for an input method candidate
@@ -522,7 +522,6 @@ pub fn setup_im_window_receivers(
                         if let Ok(args) = signal.args() {
                             let text_to_insert = args.text.to_owned();
 
-                            // When a string is committed, mark for hiding
                             if let Ok(mut guard) = im_window_state.lock() {
                                 // Insert, if anything
                                 if !text_to_insert.is_empty() {
@@ -534,7 +533,10 @@ pub fn setup_im_window_receivers(
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to receive commit signals: {}", e);
+                    eprintln!(
+                        "{}: fcitx5-ui-rs: Failed to receive commit signals: {}",
+                        PLUGIN_NAME, e,
+                    );
                 }
             }
         }

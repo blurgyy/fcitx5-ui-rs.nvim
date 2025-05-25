@@ -126,40 +126,60 @@ pub fn register_commands() -> oxi::Result<()> {
     Ok(())
 }
 
-// Process updates when scheduled
 pub fn process_im_window_updates(
-    im_window_state: Arc<Mutex<IMWindowState>>,
+    im_window_state_arc: Arc<Mutex<IMWindowState>>,
 ) -> oxi::Result<()> {
-    // Get the state and check for pending updates
-    let mut guard = im_window_state.lock().unwrap();
+    let mut guard = im_window_state_arc.lock().unwrap();
     while let Some(update_type) = guard.pop_update() {
         match update_type {
             UpdateType::Show => {
                 guard.is_visible = true;
+                // Update buffer content first based on new state
                 guard.update_buffer()?;
+                // Then display/configure the window
                 guard.display_window()?;
             }
             UpdateType::Hide => {
                 guard.is_visible = false;
-                let im_window = get_im_window();
-                let mut im_window_guard = im_window.lock().unwrap();
-                if let Some(window) = im_window_guard.take() {
+                // When hiding, we also ensure the buffer content reflects an empty state
+                // in case it's quickly reshown before new actual content arrives.
+                // The IMWindowState's preedit/candidates should have been cleared by
+                // the fcitx signal handler that led to this Hide action.
+                guard.update_buffer()?; // Update buffer to be empty
+
+                let im_window_global_arc = get_im_window();
+                let mut im_window_opt_guard = im_window_global_arc.lock().unwrap();
+                if let Some(window_to_close) = im_window_opt_guard.take() {
+                    // Schedule the close operation
                     oxi::schedule(move |_| {
-                        if window.is_valid() {
-                            match window.close(true) {
+                        if window_to_close.is_valid() {
+                            match window_to_close.close(true) {
                                 Ok(_) => {}
-                                Err(e) => eprintln!("Error closing window: {}", e),
+                                Err(e) => eprintln!(
+                                    "{}: Error closing window: {}",
+                                    PLUGIN_NAME, e,
+                                ),
                             }
                         }
                     });
                 }
             }
             UpdateType::UpdateContent => {
+                // Only truly update and display if the window is supposed to be
+                // visible.  If it's marked as not visible, its content will be updated
+                // by update_buffer, but display_window (which might try to open or
+                // reconfigure) won't be called.  The next `Show` event will handle
+                // making it visible and correctly configured.
                 guard.update_buffer()?;
-                guard.display_window()?;
+                if guard.is_visible {
+                    guard.display_window()?;
+                }
             }
             UpdateType::Insert(s) => {
-                // NB: must use oxi::schedule here, otherwise it hangs/segfaults at runtime
+                // The commit_string handler in fcitx5/candidates.rs, which calls
+                // mark_for_insert, relies on a subsequent update_client_side_ui signal
+                // from fcitx5 to clear preedit/candidates and trigger a Hide action.
+                // So, Insert itself doesn't directly hide the window.
                 oxi::schedule(move |_| {
                     // Insert text directly at cursor position
                     let mut win = api::get_current_win();

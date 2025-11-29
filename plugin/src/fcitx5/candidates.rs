@@ -44,6 +44,13 @@ pub enum UpdateType {
     UpdateContent,
 }
 
+#[derive(Clone, Debug)]
+pub struct IMWindowRenderPlan {
+    pub width: u32,
+    pub height: u32,
+    pub lines: Vec<String>,
+}
+
 /// State for candidate selection UI
 #[derive(Clone, Debug)]
 pub struct IMWindowState {
@@ -209,13 +216,82 @@ impl IMWindowState {
         (width, height)
     }
 
-    /// Setup the candidate window
-    pub fn display_window(&mut self) -> oxi::Result<()> {
+    pub fn build_render_plan(&self) -> IMWindowRenderPlan {
+        let (width, height) = self.calculate_window_dimensions();
+
+        let mut lines = Vec::new();
+
+        if !self.aux_up_str.is_empty() {
+            lines.push(self.aux_up_str.clone());
+            if !self.preedit_text.is_empty() || !self.candidates.is_empty() {
+                lines.push("\u{2500}".repeat(width as usize));
+            }
+        }
+
+        if !self.preedit_text.is_empty() {
+            lines.push(format!(" \u{f11c}\u{fe0f}  {}", self.preedit_text));
+            lines.push("\u{2500}".repeat(width as usize));
+        }
+
+        for (idx, candidate) in self.candidates.iter().enumerate() {
+            let marker = if idx == self.selected_index {
+                "\u{25ba}"
+            } else {
+                " "
+            };
+            lines.push(format!(
+                "{} {} {}",
+                marker, candidate.display, candidate.text
+            ));
+        }
+
+        if self.has_prev || self.has_next {
+            lines.push("\u{2500}".repeat(width as usize));
+
+            let prev_part = if self.has_prev {
+                "\u{25c4} Prev"
+            } else {
+                "      "
+            };
+            let next_part = if self.has_next {
+                "Next \u{25ba}"
+            } else {
+                "      "
+            };
+
+            let prev_width = UnicodeWidthStr::width(prev_part);
+            let next_width = UnicodeWidthStr::width(next_part);
+
+            let total_width = width as usize;
+
+            let mut paging_line = String::with_capacity(total_width);
+            paging_line.push_str(prev_part);
+
+            let spaces_needed = total_width.saturating_sub(prev_width + next_width);
+            paging_line.push_str(&" ".repeat(spaces_needed));
+            paging_line.push_str(next_part);
+
+            paging_line.push_str("");
+
+            lines.push(paging_line);
+        }
+
+        IMWindowRenderPlan {
+            width,
+            height,
+            lines,
+        }
+    }
+
+    /// Setup the candidate window using a precomputed render plan
+    pub fn display_window_from_plan(
+        &self,
+        plan: &IMWindowRenderPlan,
+    ) -> oxi::Result<()> {
         // do not show window if buffer does not exist
         let buffer = match self.buffer.as_ref() {
             Some(b) => b,
             None => {
-                // This should ideally not happen if setup() correctly creates it.
                 let _ = api::echo(
                     vec![("Fcitx5: Candidate buffer not initialized for display_window. Please report this.", Some("ErrorMsg"))],
                     true,
@@ -228,8 +304,8 @@ impl IMWindowState {
             }
         };
 
-        // Calculate both width and height for initial setup
-        let (width, height) = self.calculate_window_dimensions();
+        let width = plan.width;
+        let height = plan.height;
 
         // Create the floating window for candidates if needed
         let im_window = get_im_window();
@@ -301,15 +377,12 @@ impl IMWindowState {
 
                     match api::open_win(&buffer, false, &opts) {
                         Ok(window) => {
-                            // Set window options
                             let _ = set_option_value(
                                 "wrap",
                                 true,
                                 &OptionOpts::builder().win(window.clone()).build(),
                             );
 
-                            // Swap the new window into the global slot, but close any
-                            // previous window outside of the mutex.
                             let old_window = {
                                 let mut im_window_guard = im_window.lock().unwrap();
                                 im_window_guard.replace(window)
@@ -335,95 +408,8 @@ impl IMWindowState {
         Ok(())
     }
 
-    /// Update the candidate window display
-    pub fn update_buffer(&mut self) -> oxi::Result<()> {
-        // Delete the buffer and skip if there is nothing to show With persistent buffer,
-        // we don't delete it.
-        // If nothing to show, the buffer will be cleared / set with empty lines. The
-        // window hiding is handled by UpdateType::Hide.
-        if self.aux_up_str.is_empty()
-            && self.candidates.is_empty()
-            && self.preedit_text.is_empty()
-        {
-            // If nothing to show, we will effectively clear the buffer later by setting
-            // empty lines.
-        }
-
-        // Make sure the buffer exists
-        let buffer = match self.buffer.as_ref() {
-            Some(b) => b,
-            None => {
-                // This should ideally not happen if setup() correctly creates it.
-                let _ = api::echo(
-                    vec![("Fcitx5: Candidate buffer not initialized in update_buffer. Please report this.", Some("ErrorMsg"))],
-                    true,
-                    &EchoOpts::default(),
-                );
-                return Err(oxi::api::Error::Other(
-                    "Candidate buffer not initialized".into(),
-                )
-                .into());
-            }
-        };
-
-        // Calculate dimensions
-        let (width, _height) = self.calculate_window_dimensions();
-
-        // Generate content for the candidate window
-        let mut lines = Vec::new();
-
-        if !self.aux_up_str.is_empty() {
-            lines.push(self.aux_up_str.clone());
-            if !self.preedit_text.is_empty() || !self.candidates.is_empty() {
-                lines.push("─".repeat(width as usize));
-            }
-        }
-
-        // Add preedit text at the top with better formatting
-        if !self.preedit_text.is_empty() {
-            // \u{fe0f} here is not critical for preserving the full-width keyboard
-            // symbol.  The critical factor is to **not** use winblend.
-            lines.push(format!(" \u{f11c}\u{fe0f}  {}", self.preedit_text));
-            lines.push("─".repeat(width as usize));
-        }
-
-        // Add candidates with improved formatting
-        for (idx, candidate) in self.candidates.iter().enumerate() {
-            let marker = if idx == self.selected_index {
-                "►"
-            } else {
-                " "
-            };
-            lines.push(format!(
-                "{} {} {}",
-                marker, candidate.display, candidate.text
-            ));
-        }
-
-        // Add paging info at the bottom with better styling
-        if self.has_prev || self.has_next {
-            lines.push("─".repeat(width as usize));
-
-            let prev_part = if self.has_prev { "◄ Prev" } else { "      " };
-            let next_part = if self.has_next { "Next ►" } else { "      " };
-
-            let prev_width = UnicodeWidthStr::width(prev_part);
-            let next_width = UnicodeWidthStr::width(next_part);
-
-            let total_width = width as usize;
-
-            let mut paging_line = String::with_capacity(total_width);
-            paging_line.push_str(prev_part);
-
-            let spaces_needed = total_width.saturating_sub(prev_width + next_width);
-            paging_line.push_str(&" ".repeat(spaces_needed));
-            paging_line.push_str(next_part);
-
-            lines.push(paging_line);
-        }
-
-        // First schedule the buffer update
-        let lines_clone = lines.clone();
+    pub fn apply_render_plan_to_buffer(buffer: &Buffer, plan: &IMWindowRenderPlan) {
+        let lines_clone = plan.lines.clone();
         oxi::schedule({
             let mut buffer = buffer.clone();
             let lines = lines_clone;
@@ -437,8 +423,6 @@ impl IMWindowState {
                 }
             }
         });
-
-        Ok(())
     }
 
     // Rather than directly showing/hiding, mark for update

@@ -129,10 +129,22 @@ pub fn register_commands() -> oxi::Result<()> {
 pub fn process_im_window_updates(
     im_window_state_arc: Arc<Mutex<IMWindowState>>,
 ) -> oxi::Result<()> {
-    let mut guard = lock_logged!(im_window_state_arc, "IMWindowState");
-    while let Some(update_type) = guard.pop_update() {
+    // First, drain all pending updates while holding the mutex, so we do not keep
+    // IMWindowState locked while executing UI logic.
+    let updates: Vec<UpdateType> = {
+        let mut guard = lock_logged!(im_window_state_arc, "IMWindowState");
+        let mut drained = Vec::new();
+        while let Some(update_type) = guard.pop_update() {
+            drained.push(update_type);
+        }
+        drained
+    };
+
+    for update_type in updates {
         match update_type {
             UpdateType::Show => {
+                // Re-lock state only for the duration of the update logic.
+                let mut guard = lock_logged!(im_window_state_arc, "IMWindowState");
                 guard.is_visible = true;
                 // Update buffer content first based on new state
                 guard.update_buffer()?;
@@ -140,13 +152,17 @@ pub fn process_im_window_updates(
                 guard.display_window()?;
             }
             UpdateType::Hide => {
-                guard.is_visible = false;
-                // When hiding, we also ensure the buffer content reflects an empty state
-                // in case it's quickly reshown before new actual content arrives.
-                // The IMWindowState's preedit/candidates should have been cleared by
-                // the fcitx signal handler that led to this Hide action.
-                guard.update_buffer()?; // Update buffer to be empty
+                {
+                    let mut guard = lock_logged!(im_window_state_arc, "IMWindowState");
+                    guard.is_visible = false;
+                    // When hiding, we also ensure the buffer content reflects an empty
+                    // state in case it's quickly reshown before new actual content
+                    // arrives. The IMWindowState's preedit/candidates should have been
+                    // cleared by the fcitx signal handler that led to this Hide action.
+                    guard.update_buffer()?; // Update buffer to be empty
+                }
 
+                // Close the IM window without holding the IMWindowState lock.
                 let im_window_global_arc = get_im_window();
                 let mut im_window_opt_guard =
                     lock_logged!(im_window_global_arc, "IMWindow");
@@ -172,6 +188,7 @@ pub fn process_im_window_updates(
                 // by update_buffer, but display_window (which might try to open or
                 // reconfigure) won't be called.  The next `Show` event will handle
                 // making it visible and correctly configured.
+                let mut guard = lock_logged!(im_window_state_arc, "IMWindowState");
                 guard.update_buffer()?;
                 if guard.is_visible {
                     guard.display_window()?;

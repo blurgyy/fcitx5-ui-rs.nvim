@@ -1,6 +1,13 @@
 //! Shared utility functions
 
 use nvim_oxi::api::{self, opts::ExecOpts, Error as ApiError};
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use lazy_static::lazy_static;
 
 pub static CURSOR_INDICATOR: char = '│';
 
@@ -57,4 +64,105 @@ pub fn do_feedkeys_noremap(keys: &str) -> nvim_oxi::Result<()> {
     );
     api::exec2(&viml_lines, &ExecOpts::default())?;
     Ok(())
+}
+
+// Environment variable that, when set, enables lock logging and
+// specifies the file path to append logs to.
+const LOCK_LOG_ENV_VAR: &str = "FCITX5_UI_RS_LOCK_LOG_FILE";
+
+lazy_static! {
+    // Optional logfile guarded by a mutex so that concurrent writers
+    // do not interleave lines. If the env var is not set or the file
+    // cannot be opened, logging is silently disabled.
+    static ref LOCK_LOG_FILE: Option<Mutex<File>> = {
+        match std::env::var(LOCK_LOG_ENV_VAR) {
+            Ok(path) if !path.is_empty() => {
+                let file_result = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path);
+                match file_result {
+                    Ok(file) => Some(Mutex::new(file)),
+                    Err(_) => None,
+                }
+            }
+            _ => None,
+        }
+    };
+}
+
+fn current_timestamp_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+/// Log a lock event with source location info.
+/// This is called by the lock_logged! macro.
+pub fn log_lock_event_with_location(file: &str, line: u32, col: u32, message: &str) {
+    if let Some(file_mutex) = &*LOCK_LOG_FILE {
+        if let Ok(mut file_handle) = file_mutex.lock() {
+            let _ = writeln!(
+                &mut *file_handle,
+                "[{}][{:?}] {}:{}:{} {}",
+                current_timestamp_millis(),
+                std::thread::current().id(),
+                file,
+                line,
+                col,
+                message,
+            );
+        }
+    }
+}
+
+/// Check if lock logging is enabled (for use in macros to short-circuit formatting).
+pub fn is_lock_logging_enabled() -> bool {
+    LOCK_LOG_FILE.is_some()
+}
+
+/// Macro to lock an Arc<Mutex<T>> with logging that includes the call site location.
+///
+/// Usage:
+///   let guard = lock_logged!(my_arc_mutex, "MutexName");
+///
+/// This will log lines like:
+///   [timestamp][ThreadId(1)] src/foo.rs:42:5 locking Arc<Mutex<MutexName>>: acquiring
+///   [timestamp][ThreadId(1)] src/foo.rs:42:5 locking Arc<Mutex<MutexName>>: acquired
+#[macro_export]
+macro_rules! lock_logged {
+    ($arc_mutex:expr, $name:expr) => {{
+        use $crate::utils::{is_lock_logging_enabled, log_lock_event_with_location};
+        if is_lock_logging_enabled() {
+            log_lock_event_with_location(
+                file!(),
+                line!(),
+                column!(),
+                &format!("locking Arc<Mutex<{}>>: acquiring", $name),
+            );
+        }
+        let result = $arc_mutex.lock();
+        if is_lock_logging_enabled() {
+            match &result {
+                Ok(_) => {
+                    log_lock_event_with_location(
+                        file!(),
+                        line!(),
+                        column!(),
+                        &format!("locking Arc<Mutex<{}>>: acquired", $name),
+                    );
+                }
+                Err(_) => {
+                    log_lock_event_with_location(
+                        file!(),
+                        line!(),
+                        column!(),
+                        &format!("locking Arc<Mutex<{}>>: poisoned", $name),
+                    );
+                }
+            }
+        }
+        result.unwrap()
+    }};
 }

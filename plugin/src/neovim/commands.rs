@@ -21,7 +21,7 @@ use crate::{
     plugin::Fcitx5Plugin,
 };
 use crate::{plugin::get_im_window, utils::as_api_error};
-use crate::{plugin::get_state, utils::do_feedkeys_noremap};
+use crate::{lock_logged, plugin::get_state, utils::do_feedkeys_noremap};
 
 use super::{autocmds::deregister_autocommands, keymaps::register_keymaps};
 
@@ -129,7 +129,7 @@ pub fn register_commands() -> oxi::Result<()> {
 pub fn process_im_window_updates(
     im_window_state_arc: Arc<Mutex<IMWindowState>>,
 ) -> oxi::Result<()> {
-    let mut guard = im_window_state_arc.lock().unwrap();
+    let mut guard = lock_logged!(im_window_state_arc, "IMWindowState");
     while let Some(update_type) = guard.pop_update() {
         match update_type {
             UpdateType::Show => {
@@ -148,7 +148,8 @@ pub fn process_im_window_updates(
                 guard.update_buffer()?; // Update buffer to be empty
 
                 let im_window_global_arc = get_im_window();
-                let mut im_window_opt_guard = im_window_global_arc.lock().unwrap();
+                let mut im_window_opt_guard = lock_logged!(im_window_global_arc, "IMWindow");
+
                 if let Some(window_to_close) = im_window_opt_guard.take() {
                     // Schedule the close operation
                     oxi::schedule(move |_| {

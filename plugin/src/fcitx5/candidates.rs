@@ -11,6 +11,7 @@ use nvim_oxi::{
     self as oxi,
     api::{
         self,
+        opts::EchoOpts,
         types::{
             WindowConfig, WindowRelativeTo, WindowStyle, WindowTitle,
             WindowTitlePosition,
@@ -210,10 +211,10 @@ impl IMWindowState {
             Some(b) => b,
             None => {
                 // This should ideally not happen if setup() correctly creates it.
-                let _ = api::notify(
-                    "Fcitx5: Candidate buffer not initialized for display_window. Please report this.",
-                    api::types::LogLevel::Error,
-                    &oxi::Dictionary::new(),
+                let _ = api::echo(
+                    vec![("Fcitx5: Candidate buffer not initialized for display_window. Please report this.", Some("ErrorMsg"))],
+                    true,
+                    &EchoOpts::default(),
                 );
                 return Err(oxi::api::Error::Other(
                     "Candidate buffer not initialized for display_window".into(),
@@ -316,10 +317,10 @@ impl IMWindowState {
             Some(b) => b,
             None => {
                 // This should ideally not happen if setup() correctly creates it.
-                let _ = api::notify(
-                    "Fcitx5: Candidate buffer not initialized in update_buffer. Please report this.",
-                    api::types::LogLevel::Error,
-                    &oxi::Dictionary::new(),
+                let _ = api::echo(
+                    vec![("Fcitx5: Candidate buffer not initialized in update_buffer. Please report this.", Some("ErrorMsg"))],
+                    true,
+                    &EchoOpts::default(),
                 );
                 return Err(oxi::api::Error::Other(
                     "Candidate buffer not initialized".into(),

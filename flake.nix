@@ -39,9 +39,7 @@
         in
         {
           vimPlugins = prev.vimPlugins // {
-            fcitx5-ui-rs-nvim = final.callPackage ./plugin {
-              inherit version;
-            };
+            fcitx5-ui-rs-nvim = final.callPackage ./plugin { inherit version; };
           };
         };
       hydraJobs = self.packages;

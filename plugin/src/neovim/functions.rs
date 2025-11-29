@@ -1,6 +1,9 @@
 use nvim_oxi::{
     self as oxi,
-    api::{self, opts::SetKeymapOpts},
+    api::{
+        self,
+        opts::{EchoOpts, SetKeymapOpts},
+    },
 };
 
 use crate::plugin::{
@@ -27,10 +30,16 @@ pub fn setup(config: PluginConfig) -> bool {
                 im_state_guard.buffer = Some(buf);
             }
             Err(e) => {
-                let _ = api::notify(
-                    &format!("{PLUGIN_NAME}: Failed to create candidate buffer: {e}"),
-                    api::types::LogLevel::Error,
-                    &oxi::Dictionary::new(),
+                let _ = api::echo(
+                    vec![(
+                        format!(
+                            "{PLUGIN_NAME}: Failed to create candidate buffer: {e}"
+                        )
+                        .as_str(),
+                        Some("ErrorMsg"),
+                    )],
+                    true,
+                    &EchoOpts::default(),
                 );
                 return false; // Indicate setup failure
             }
@@ -69,10 +78,10 @@ pub fn setup(config: PluginConfig) -> bool {
                     .build(),
             )
         }) {
-            let _ = api::notify(
-                &format!("{PLUGIN_NAME}: Could not setup default enable keymap for '{on_key}': {e}"),
-                api::types::LogLevel::Warn,
-                &oxi::Dictionary::new(),
+            let _ = api::echo(
+                vec![(format!("{PLUGIN_NAME}: Could not setup default enable keymap for '{on_key}': {e}").as_str(), Some("WarningMsg"))],
+                true,
+                &EchoOpts::default(),
             );
             return false;
         }

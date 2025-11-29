@@ -99,7 +99,6 @@ pub struct Fcitx5Plugin {
     /// Per-buffer augroup_id
     pub augroup_id: HashMap<i32, u32>,
     pub im_window_state: Arc<Mutex<IMWindowState>>,
-    pub im_window: Arc<Mutex<Option<nvim_oxi::api::Window>>>,
     pub existing_keymaps_insert: HashMap<i32, BufferOriginalKeymaps>,
 }
 
@@ -112,7 +111,6 @@ impl Fcitx5Plugin {
             ctx: HashMap::new(),
             augroup_id: HashMap::new(),
             im_window_state: Arc::new(Mutex::new(IMWindowState::new())),
-            im_window: Arc::new(Mutex::new(None)),
             existing_keymaps_insert: HashMap::new(),
         }
     }
@@ -206,6 +204,7 @@ pub static PLUGIN_NAME: &str = "fcitx5-ui-rs.nvim";
 // Use lazy_static for thread-safe initialization
 lazy_static::lazy_static! {
     static ref PLUGIN_STATE: Arc<Mutex<Fcitx5Plugin>> = Arc::new(Mutex::new(Fcitx5Plugin::new()));
+    static ref IM_WINDOW: Arc<Mutex<Option<nvim_oxi::api::Window>>> = Arc::new(Mutex::new(None));
 }
 
 // Get a reference to the global state
@@ -222,7 +221,5 @@ pub fn get_im_window_state() -> Arc<Mutex<IMWindowState>> {
 
 // Get a reference to just the candidate Option<Window>
 pub fn get_im_window() -> Arc<Mutex<Option<nvim_oxi::api::Window>>> {
-    let state = get_state();
-    let state_guard = lock_logged!(state, "PLUGIN_STATE");
-    state_guard.im_window.clone()
+    IM_WINDOW.clone()
 }

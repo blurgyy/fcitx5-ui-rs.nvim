@@ -151,7 +151,12 @@ impl IMWindowState {
 
                 // Apply hysteresis to prevent small oscillations
                 // Only change size if it would be at least 4 chars different
-                if let Some(window) = get_im_window().lock().unwrap().as_ref() {
+                let maybe_window = {
+                    let im_window = get_im_window();
+                    let im_window_guard = im_window.lock().unwrap();
+                    im_window_guard.as_ref().cloned()
+                };
+                if let Some(window) = maybe_window {
                     if window.is_valid() {
                         if let Ok(config) = window.get_config() {
                             let current_width = config.width.unwrap_or(0);
@@ -228,7 +233,6 @@ impl IMWindowState {
 
         // Create the floating window for candidates if needed
         let im_window = get_im_window();
-        let mut im_window_guard = im_window.lock().unwrap();
 
         // Create window options
         let mut opts_builder = WindowConfig::builder();
@@ -250,35 +254,68 @@ impl IMWindowState {
         };
         let opts = opts_builder.build();
 
-        if im_window_guard.is_some() {
-            if let Some(ref mut window) = im_window_guard.take() {
-                if window.is_valid() {
-                    let _ = window.set_config(&opts);
-                    im_window_guard.replace(window.clone());
-                }
+        // Take any existing window out of the global slot while the mutex is held,
+        // but perform Neovim API calls without holding the mutex to avoid
+        // re-entrancy deadlocks.
+        let existing_window = {
+            let mut im_window_guard = im_window.lock().unwrap();
+            im_window_guard.take()
+        };
+
+        if let Some(mut window) = existing_window {
+            if window.is_valid() {
+                let _ = window.set_config(&opts);
             }
+
+            let mut im_window_guard = im_window.lock().unwrap();
+            *im_window_guard = Some(window);
         } else {
-            // Open the window with our buffer
-            drop(im_window_guard);
+            // Open the window with our buffer on the main thread
             oxi::schedule({
                 let im_window = im_window.clone();
                 let buffer = buffer.clone();
+                let width = width;
+                let height = height;
                 move |_| {
-                    let mut im_window_guard = im_window.lock().unwrap();
+                    // Rebuild the window config using the captured dimensions
+                    let mut opts_builder = WindowConfig::builder();
+                    let opts_builder = opts_builder
+                        .relative(WindowRelativeTo::Cursor)
+                        .zindex(0x7fff)
+                        .row(1)
+                        .col(0)
+                        .width(width)
+                        .height(height)
+                        .focusable(false)
+                        .style(WindowStyle::Minimal);
+                    let opts_builder = if width > 2 && height > 1 {
+                        opts_builder
+                            .title(WindowTitle::SimpleString(
+                                " Fcitx5 ".to_owned().into(),
+                            ))
+                            .title_pos(WindowTitlePosition::Center)
+                    } else {
+                        opts_builder
+                    };
+                    let opts = opts_builder.build();
+
                     match api::open_win(&buffer, false, &opts) {
                         Ok(window) => {
                             // Set window options
-                            // let _ = set_option_value(
-                            //     "winblend",
-                            //     15,
-                            //     &OptionOpts::builder().win(window.clone()).build(),
-                            // );
                             let _ = set_option_value(
                                 "wrap",
                                 true,
                                 &OptionOpts::builder().win(window.clone()).build(),
                             );
-                            if let Some(old_window) = im_window_guard.replace(window) {
+
+                            // Swap the new window into the global slot, but close any
+                            // previous window outside of the mutex.
+                            let old_window = {
+                                let mut im_window_guard = im_window.lock().unwrap();
+                                im_window_guard.replace(window)
+                            };
+
+                            if let Some(old_window) = old_window {
                                 if old_window.is_valid() {
                                     match old_window.close(true) {
                                         Ok(_) => {}

@@ -307,9 +307,6 @@ impl IMWindowState {
         let width = plan.width;
         let height = plan.height;
 
-        // Create the floating window for candidates if needed
-        let im_window = get_im_window();
-
         // Create window options
         let mut opts_builder = WindowConfig::builder();
         let opts_builder = opts_builder
@@ -330,29 +327,30 @@ impl IMWindowState {
         };
         let opts = opts_builder.build();
 
-        // Take any existing window out of the global slot while the mutex is held,
-        // but perform Neovim API calls without holding the mutex to avoid
-        // re-entrancy deadlocks.
-        let existing_window = {
-            let mut im_window_guard = im_window.lock().unwrap();
-            im_window_guard.take()
-        };
-
-        if let Some(mut window) = existing_window {
-            if window.is_valid() {
-                let _ = window.set_config(&opts);
-            }
-
-            let mut im_window_guard = im_window.lock().unwrap();
-            *im_window_guard = Some(window);
-        } else {
+        oxi::schedule({
+            let im_window = get_im_window();
+            let buffer = buffer.clone();
+            let width = width;
+            let height = height;
             // Open the window with our buffer on the main thread
-            oxi::schedule({
-                let im_window = im_window.clone();
-                let buffer = buffer.clone();
-                let width = width;
-                let height = height;
-                move |_| {
+            move |_| {
+                // Must perform the two operations:
+                //  1. check if the window exists (here), and
+                //  2. condition on its existence/non-existenct (below if-else block)
+                // both in oxi::schedule to avoid TOCTOU race condition
+                let existing_window = {
+                    let mut im_window_guard = im_window.lock().unwrap();
+                    im_window_guard.take()
+                };
+
+                if let Some(mut window) = existing_window {
+                    if window.is_valid() {
+                        let _ = window.set_config(&opts);
+                    }
+
+                    let mut im_window_guard = im_window.lock().unwrap();
+                    *im_window_guard = Some(window);
+                } else {
                     // Rebuild the window config using the captured dimensions
                     let mut opts_builder = WindowConfig::builder();
                     let opts_builder = opts_builder
@@ -402,8 +400,8 @@ impl IMWindowState {
                         Err(e) => eprintln!("Error creating window: {}", e),
                     }
                 }
-            });
-        }
+            }
+        });
 
         Ok(())
     }

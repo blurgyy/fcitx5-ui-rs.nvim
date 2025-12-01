@@ -19,7 +19,7 @@ fn handle_special_key(nvim_keycode: &str, buf: &Buffer) -> oxi::Result<()> {
     let state = get_state();
     let state_guard = state.lock().unwrap();
     let im_window_guard = state_guard.im_window_state.lock().unwrap();
-    if !im_window_guard.is_visible || im_window_guard.is_showing_current_im() {
+    if !im_window_guard.is_visible() || im_window_guard.is_showing_current_im() {
         // call the original keymap, if there is one
         if let Some(buf_keymaps) =
             state_guard.existing_keymaps_insert.get(&buf.handle())

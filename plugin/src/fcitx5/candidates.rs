@@ -26,6 +26,7 @@ use std::{
 };
 use unicode_width::UnicodeWidthStr;
 
+use crate::lock_logged;
 use crate::plugin::{get_im_window, PLUGIN_NAME};
 use crate::utils::CURSOR_INDICATOR;
 
@@ -38,8 +39,6 @@ pub struct Candidate {
 
 #[derive(Clone, Debug)]
 pub enum UpdateType {
-    Show,
-    Hide,
     Insert(String),
     UpdateContent,
 }
@@ -49,6 +48,12 @@ pub struct IMWindowRenderPlan {
     pub width: u32,
     pub height: u32,
     pub lines: Vec<String>,
+}
+
+impl IMWindowRenderPlan {
+    pub fn is_visible(&self) -> bool {
+        self.width > 0 && self.height > 0 && self.lines.len() > 0
+    }
 }
 
 /// State for candidate selection UI
@@ -68,8 +73,8 @@ pub struct IMWindowState {
     pub has_prev: bool,
     /// Has next page
     pub has_next: bool,
-    /// Whether candidate window is currently visible
-    pub is_visible: bool,
+    /// Currently online render plan
+    pub rendered_plan: Option<IMWindowRenderPlan>,
     /// Whether the window should be updated
     pub update_queue: VecDeque<UpdateType>,
 }
@@ -84,8 +89,15 @@ impl IMWindowState {
             aux_up_str: String::new(),
             has_prev: false,
             has_next: false,
-            is_visible: false,
+            rendered_plan: None,
             update_queue: VecDeque::new(),
+        }
+    }
+
+    pub fn is_visible(&self) -> bool {
+        match self.rendered_plan.as_ref() {
+            Some(plan) => plan.is_visible(),
+            None => false,
         }
     }
 
@@ -285,11 +297,43 @@ impl IMWindowState {
 
     /// Setup the candidate window using a precomputed render plan
     pub fn display_window_from_plan(
-        &self,
+        &mut self,
         plan: &IMWindowRenderPlan,
     ) -> oxi::Result<()> {
+        self.rendered_plan = Some(plan.clone());
+
+        // drop mutability
+        let self_immut = self;
+
+        if !self_immut.is_visible() {
+            oxi::schedule({
+                let im_window_global_arc = get_im_window();
+                move |_| {
+                    // NB: must lock the window inside oxi::schedule to avoid TOCTOU
+                    // race condition where we might close a stale window
+                    let mut im_window_opt_guard =
+                        lock_logged!(im_window_global_arc, "IMWindow");
+
+                    if let Some(window_to_close) = im_window_opt_guard.take() {
+                        if window_to_close.is_valid() {
+                            match window_to_close.close(true) {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    eprintln!(
+                                        "{}: Error closing window: {}",
+                                        PLUGIN_NAME, e,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            return Ok(());
+        }
+
         // do not show window if buffer does not exist
-        let buffer = match self.buffer.as_ref() {
+        let buffer = match self_immut.buffer.as_ref() {
             Some(b) => b,
             None => {
                 let _ = api::echo(
@@ -334,10 +378,11 @@ impl IMWindowState {
             let height = height;
             // Open the window with our buffer on the main thread
             move |_| {
-                // Must perform the two operations:
+                // NB: Must perform the two operations:
                 //  1. check if the window exists (here), and
                 //  2. condition on its existence/non-existenct (below if-else block)
-                // both in oxi::schedule to avoid TOCTOU race condition
+                // both in oxi::schedule to avoid TOCTOU race condition where we might
+                // create a window multiple times
                 let existing_window = {
                     let mut im_window_guard = im_window.lock().unwrap();
                     im_window_guard.take()
@@ -423,15 +468,6 @@ impl IMWindowState {
         });
     }
 
-    // Rather than directly showing/hiding, mark for update
-    pub fn mark_for_show(&mut self) {
-        self.update_queue.push_back(UpdateType::Show);
-    }
-
-    pub fn mark_for_hide(&mut self) {
-        self.update_queue.push_back(UpdateType::Hide);
-    }
-
     pub fn mark_for_insert(&mut self, text: String) {
         self.update_queue.push_back(UpdateType::Insert(text));
     }
@@ -504,15 +540,7 @@ pub fn setup_im_window_receivers(
                                         usize::try_from(cursor_idx).unwrap_or(0);
                                     // args.cursor_idx().try_into().unwrap_or(0);
 
-                                    // Mark for update based on whether we have
-                                    // candidates
-                                    if !guard.aux_up_str.is_empty()
-                                        || !guard.candidates.is_empty()
-                                    {
-                                        guard.mark_for_show();
-                                    } else {
-                                        guard.mark_for_hide();
-                                    }
+                                    guard.mark_for_update();
                                 }
                                 let _ = trigger.send();
                             }

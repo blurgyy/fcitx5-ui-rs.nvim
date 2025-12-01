@@ -8,6 +8,7 @@ use nvim_oxi::{
     libuv::AsyncHandle,
 };
 
+use crate::utils::as_api_error;
 use crate::{
     fcitx5::candidates::setup_im_window_receivers,
     ignore_dbus_no_interface_error,
@@ -21,7 +22,6 @@ use crate::{
     plugin::Fcitx5Plugin,
 };
 use crate::{lock_logged, plugin::get_state, utils::do_feedkeys_noremap};
-use crate::{plugin::get_im_window, utils::as_api_error};
 
 use super::{autocmds::deregister_autocommands, keymaps::register_keymaps};
 
@@ -133,68 +133,12 @@ pub fn process_im_window_updates(
 
     while let Some(update_type) = guard.pop_update() {
         match update_type {
-            UpdateType::Show => {
-                // Build render plan under the IMWindowState lock, then apply it
-                // outside to avoid holding the mutex over Neovim calls.
-                let (plan, is_visible) = {
-                    guard.is_visible = true;
-                    (guard.build_render_plan(), guard.is_visible)
-                };
-
-                if is_visible {
-                    // Apply to buffer and window without holding the IMWindowState lock.
-                    if let Some(buffer) = guard.buffer.as_ref() {
-                        IMWindowState::apply_render_plan_to_buffer(buffer, &plan);
-                    }
-                    guard.display_window_from_plan(&plan)?;
-                }
-            }
-            UpdateType::Hide => {
-                let plan = {
-                    guard.is_visible = false;
-                    guard.build_render_plan()
-                };
-
-                {
-                    if let Some(buffer) = guard.buffer.as_ref() {
-                        IMWindowState::apply_render_plan_to_buffer(buffer, &plan);
-                    }
-                }
-
-                // Close the IM window without holding the IMWindowState lock.
-                let im_window_global_arc = get_im_window();
-                let mut im_window_opt_guard =
-                    lock_logged!(im_window_global_arc, "IMWindow");
-
-                if let Some(window_to_close) = im_window_opt_guard.take() {
-                    oxi::schedule(move |_| {
-                        if window_to_close.is_valid() {
-                            match window_to_close.close(true) {
-                                Ok(_) => {}
-                                Err(e) => eprintln!(
-                                    "{}: Error closing window: {}",
-                                    PLUGIN_NAME, e,
-                                ),
-                            }
-                        }
-                    });
-                }
-            }
             UpdateType::UpdateContent => {
-                let (plan, is_visible) = {
-                    let plan = guard.build_render_plan();
-                    (plan, guard.is_visible)
-                };
-
-                {
-                    if let Some(buffer) = guard.buffer.as_ref() {
-                        IMWindowState::apply_render_plan_to_buffer(buffer, &plan);
-                    }
+                let plan = guard.build_render_plan();
+                if let Some(buffer) = guard.buffer.as_ref() {
+                    IMWindowState::apply_render_plan_to_buffer(buffer, &plan);
                 }
-
-                if is_visible {
-                    guard.display_window_from_plan(&plan)?;
-                }
+                guard.display_window_from_plan(&plan)?;
             }
             UpdateType::Insert(s) => {
                 // The commit_string handler in fcitx5/candidates.rs, which calls

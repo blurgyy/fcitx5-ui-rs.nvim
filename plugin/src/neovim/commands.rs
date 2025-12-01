@@ -129,54 +129,34 @@ pub fn register_commands() -> oxi::Result<()> {
 pub fn process_im_window_updates(
     im_window_state_arc: Arc<Mutex<IMWindowState>>,
 ) -> oxi::Result<()> {
-    // First, drain all pending updates while holding the mutex, so we do not keep
-    // IMWindowState locked while executing UI logic.
-    let updates: Vec<UpdateType> = {
-        let mut guard = lock_logged!(im_window_state_arc, "IMWindowState");
-        let mut drained = Vec::new();
-        while let Some(update_type) = guard.pop_update() {
-            drained.push(update_type);
-        }
-        drained
-    };
+    let mut guard = lock_logged!(im_window_state_arc, "IMWindowState");
 
-    for update_type in updates {
+    while let Some(update_type) = guard.pop_update() {
         match update_type {
             UpdateType::Show => {
                 // Build render plan under the IMWindowState lock, then apply it
                 // outside to avoid holding the mutex over Neovim calls.
                 let (plan, is_visible) = {
-                    let mut guard = lock_logged!(im_window_state_arc, "IMWindowState");
                     guard.is_visible = true;
                     (guard.build_render_plan(), guard.is_visible)
                 };
 
                 if is_visible {
                     // Apply to buffer and window without holding the IMWindowState lock.
-                    let state_guard =
-                        lock_logged!(im_window_state_arc, "IMWindowState");
-                    if let Some(buffer) = state_guard.buffer.as_ref() {
+                    if let Some(buffer) = guard.buffer.as_ref() {
                         IMWindowState::apply_render_plan_to_buffer(buffer, &plan);
                     }
-                    drop(state_guard);
-
-                    // Use the state to drive window configuration using the same plan.
-                    let state_guard =
-                        lock_logged!(im_window_state_arc, "IMWindowState");
-                    state_guard.display_window_from_plan(&plan)?;
+                    guard.display_window_from_plan(&plan)?;
                 }
             }
             UpdateType::Hide => {
                 let plan = {
-                    let mut guard = lock_logged!(im_window_state_arc, "IMWindowState");
                     guard.is_visible = false;
                     guard.build_render_plan()
                 };
 
                 {
-                    let state_guard =
-                        lock_logged!(im_window_state_arc, "IMWindowState");
-                    if let Some(buffer) = state_guard.buffer.as_ref() {
+                    if let Some(buffer) = guard.buffer.as_ref() {
                         IMWindowState::apply_render_plan_to_buffer(buffer, &plan);
                     }
                 }
@@ -202,23 +182,18 @@ pub fn process_im_window_updates(
             }
             UpdateType::UpdateContent => {
                 let (plan, is_visible) = {
-                    let guard = lock_logged!(im_window_state_arc, "IMWindowState");
                     let plan = guard.build_render_plan();
                     (plan, guard.is_visible)
                 };
 
                 {
-                    let state_guard =
-                        lock_logged!(im_window_state_arc, "IMWindowState");
-                    if let Some(buffer) = state_guard.buffer.as_ref() {
+                    if let Some(buffer) = guard.buffer.as_ref() {
                         IMWindowState::apply_render_plan_to_buffer(buffer, &plan);
                     }
                 }
 
                 if is_visible {
-                    let state_guard =
-                        lock_logged!(im_window_state_arc, "IMWindowState");
-                    state_guard.display_window_from_plan(&plan)?;
+                    guard.display_window_from_plan(&plan)?;
                 }
             }
             UpdateType::Insert(s) => {

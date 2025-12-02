@@ -1,10 +1,7 @@
 //! Candidate selection and UI management
 
+use fcitx5_dbus::input_context::InputContextProxyBlocking;
 use fcitx5_dbus::zbus::Result;
-use fcitx5_dbus::{
-    input_context::InputContextProxyBlocking,
-    utils::key_event::KeyState as Fcitx5KeyState,
-};
 use nvim_oxi::api::opts::OptionOpts;
 use nvim_oxi::api::set_option_value;
 use nvim_oxi::{
@@ -585,39 +582,6 @@ pub fn setup_im_window_receivers(
                         "{}: fcitx5-ui-rs: Failed to receive commit signals: {}",
                         PLUGIN_NAME, e,
                     );
-                }
-            }
-        }
-    });
-
-    // FIXME: this thread does not seem to do shit
-    std::thread::spawn({
-        let forward_ctx = ctx.clone();
-        move || {
-            match forward_ctx.receive_forward_key() {
-                Ok(forward_signal) => {
-                    for signal in forward_signal {
-                        if let Ok(args) = signal.args() {
-                            if args.is_release {
-                                return;
-                            }
-                            let mut key = String::new();
-                            let modifier_prefix =
-                                match Fcitx5KeyState::from_bits(args.states) {
-                                    Some(Fcitx5KeyState::Ctrl) => "<C-",
-                                    Some(Fcitx5KeyState::Alt) => "<M-",
-                                    Some(Fcitx5KeyState::Shift) => "<S-",
-                                    _ => {
-                                        "" // no modifier
-                                    }
-                                };
-                            key.push_str(modifier_prefix);
-                            key.push(args.sym as u8 as char);
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Failed to receive commit signals: {}", e);
                 }
             }
         }

@@ -211,7 +211,7 @@ pub fn load_plugin(state: Arc<Mutex<Fcitx5Plugin>>, buf: &Buffer) -> oxi::Result
     // if already in insert mode, set the im
     let got_mode = api::get_mode();
     match &std::str::from_utf8(got_mode.mode.as_bytes()) {
-        Ok("i") | Ok("R") => {
+        Ok("i") => {
             ignore_dbus_no_interface_error!(state_guard.activate_im(buf));
         }
         _ => {}
